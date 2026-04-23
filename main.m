@@ -16,12 +16,16 @@ simulationMode = true;
 loadEnv('.env');
 
 pi_ip = getenv('PI_IP');
+assert(~isempty(pi_ip), 'PI_IP must be set in .env');
 
 pi_user = getenv('PI_USER');
+assert(~isempty(pi_user), 'PI_USER must be set in .env');
 
 pi_pass = getenv('PI_PASS');
+assert(~isempty(pi_pass), 'PI_PASS must be set in .env');
 
 serial_port = getenv('SERIAL_PORT');
+assert(~isempty(serial_port), 'SERIAL_PORT must be set in .env');
 
 %% 2. Initialize System
 disp('Initializing Intelligent Air Quality System...');

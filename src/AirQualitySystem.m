@@ -51,6 +51,16 @@ classdef AirQualitySystem < handle
             obj.AdviceData = strings(0);
         end
         
+        function delete(obj)
+            % Destructor to clean up hardware connections
+            if ~isempty(obj.SerialDevObj)
+                delete(obj.SerialDevObj);
+            end
+            if ~isempty(obj.PiObj)
+                delete(obj.PiObj);
+            end
+        end
+        
         function connect(obj)
             % Establish connection to hardware if not in simulation mode
             if obj.SimMode
@@ -74,6 +84,13 @@ classdef AirQualitySystem < handle
             % Main execution loop for real-time monitoring
             obj.setupDashboard();
             
+            % Preallocate arrays for performance
+            obj.TimeArray = NaN(1, numSamples);
+            obj.PM25Data = NaN(1, numSamples);
+            obj.PM10Data = NaN(1, numSamples);
+            obj.SourceData = strings(1, numSamples);
+            obj.AdviceData = strings(1, numSamples);
+            
             fprintf('Starting intelligent monitoring for %d samples...\n', numSamples);
             fprintf('------------------------------------------------------------\n');
             
@@ -92,7 +109,7 @@ classdef AirQualitySystem < handle
                 obj.AdviceData(k) = advice;
                 
                 % 3. Visualization
-                obj.updateDashboard();
+                obj.updateDashboard(k);
                 
                 % Print to console if event detected
                 if source ~= "Clean"
@@ -130,27 +147,36 @@ classdef AirQualitySystem < handle
                     pm10 = pm10 + 40;
                 end
             else
-                % Read physical sensor
+                % Read physical sensor with synchronization
                 try
-                    data = read(obj.SerialDevObj, 10);
-                    if length(data) == 10 && data(1) == 170 && data(10) == 171
-                        pm25 = ((double(data(4)) * 256) + double(data(3))) / 10;
-                        pm10 = ((double(data(6)) * 256) + double(data(5))) / 10;
-                    else
-                        % Repeat last valid if corrupted
-                        if k > 1
-                            pm25 = obj.PM25Data(k-1);
-                            pm10 = obj.PM10Data(k-1);
-                        else
-                            pm25 = 0; pm10 = 0;
+                    max_retries = 20;
+                    synced = false;
+                    for r = 1:max_retries
+                        b = read(obj.SerialDevObj, 1);
+                        if ~isempty(b) && b(1) == 170
+                            synced = true;
+                            break;
                         end
+                    end
+                    
+                    if synced
+                        rest = read(obj.SerialDevObj, 9);
+                        data = [170, rest];
+                        if length(data) == 10 && data(10) == 171
+                            pm25 = ((double(data(4)) * 256) + double(data(3))) / 10;
+                            pm10 = ((double(data(6)) * 256) + double(data(5))) / 10;
+                        else
+                            error('Invalid frame tail');
+                        end
+                    else
+                        error('Could not sync to frame header');
                     end
                 catch
                      if k > 1
                         pm25 = obj.PM25Data(k-1);
                         pm10 = obj.PM10Data(k-1);
                      else
-                        pm25 = 0; pm10 = 0;
+                        pm25 = NaN; pm10 = NaN;
                      end
                 end
             end
@@ -169,10 +195,11 @@ classdef AirQualitySystem < handle
                 rate_of_change = 0;
             end
             
-            % Smart Thresholding (dynamic based on history)
+            % Smart Thresholding (dynamic based on moving window)
             if k > 5
-                baseline = mean(obj.PM25Data(1:k-1));
-                threshold = baseline + 2*std(obj.PM25Data(1:k-1));
+                window = max(1, k-60):k-1;
+                baseline = mean(obj.PM25Data(window), 'omitnan');
+                threshold = baseline + 2*std(obj.PM25Data(window), 'omitnan');
                 threshold = max(threshold, 15); % Minimum sensible threshold
             else
                 threshold = 20;
@@ -180,10 +207,10 @@ classdef AirQualitySystem < handle
             
             % Classification Tree
             if pm25 > threshold
-                if rate_of_change > 10
-                    source = "Dust / Sudden disturbance";
-                elseif ratio > 0.8
+                if ratio > 0.8
                     source = "Combustion (cooking / smoke)";
+                elseif rate_of_change > 10
+                    source = "Dust / Sudden disturbance";
                 elseif ratio < 0.5
                     source = "Coarse particles (outdoor dust)";
                 else
@@ -279,36 +306,39 @@ classdef AirQualitySystem < handle
                 'Margin', 10);
         end
         
-        function updateDashboard(obj)
+        function updateDashboard(obj, k)
             % Updates plot with new data safely
             if ~ishghandle(obj.FigureHandle)
                 return; % Stop updating if figure was closed
             end
             
             % Update Lines
-            set(obj.PlotLine25, 'XData', obj.TimeArray, 'YData', obj.PM25Data);
-            set(obj.PlotLine10, 'XData', obj.TimeArray, 'YData', obj.PM10Data);
+            set(obj.PlotLine25, 'XData', obj.TimeArray(1:k), 'YData', obj.PM25Data(1:k));
+            set(obj.PlotLine10, 'XData', obj.TimeArray(1:k), 'YData', obj.PM10Data(1:k));
             
             % Find events
-            eventIdx = find(obj.SourceData ~= "Clean");
+            validSrc = obj.SourceData(1:k);
+            eventIdx = find(validSrc ~= "Clean" & validSrc ~= "");
             if ~isempty(eventIdx)
                 set(obj.ScatterPlot, 'XData', obj.TimeArray(eventIdx), 'YData', obj.PM25Data(eventIdx));
+            else
+                set(obj.ScatterPlot, 'XData', NaN, 'YData', NaN);
             end
             
-            % Auto scale X axis to show a scrolling window of the last 60 seconds
+            % Auto scale X axis
             ax = obj.PlotLine25.Parent;
             windowSize = 60;
-            currentMax = max(obj.TimeArray);
-            if isempty(currentMax), currentMax = 1; end
+            currentMax = obj.TimeArray(k);
+            if isempty(currentMax) || isnan(currentMax), currentMax = 1; end
             xlim(ax, [max(1, currentMax - windowSize), max(windowSize, currentMax + 5)]);
             
             % Auto scale Y axis
-            yMax = max([obj.PM10Data, 50]) * 1.2;
+            yMax = max([obj.PM10Data(1:k), 50], [], 'omitnan') * 1.2;
             ylim(ax, [0, yMax]);
             
             % Update Status Text
-            latestSrc = obj.SourceData(end);
-            latestAdv = obj.AdviceData(end);
+            latestSrc = obj.SourceData(k);
+            latestAdv = obj.AdviceData(k);
             statusStr = sprintf('CURRENT STATUS\nSource: %s\nAdvice: %s', latestSrc, latestAdv);
             set(obj.AnnotationText, 'String', statusStr);
             

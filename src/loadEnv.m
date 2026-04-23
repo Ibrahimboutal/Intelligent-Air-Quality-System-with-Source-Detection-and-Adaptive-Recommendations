@@ -14,8 +14,14 @@ function loadEnv(filename)
     while ~feof(fid)
         line = strtrim(fgetl(fid));
         
-        % Skip empty lines or comments
-        if isempty(line) || startsWith(line, '#')
+        % Strip inline comments
+        commentIdx = find(line == '#', 1);
+        if ~isempty(commentIdx)
+            line = strtrim(line(1:commentIdx-1));
+        end
+        
+        % Skip empty lines
+        if isempty(line)
             continue;
         end
         
