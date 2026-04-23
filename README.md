@@ -214,4 +214,28 @@ After the real-time monitoring session completes, the system automatically trigg
 This allows the system to discover masked pollution anomalies in the joint $[PM_{2.5}, PM_{10}]$ feature space that traditional `mean + std` thresholds might miss.
 
 ---
+
+## 🧪 Testing & Automation
+
+To ensure the reliability of this high-stakes environmental monitoring system, we have implemented a comprehensive dual-language testing suite with automated CI/CD.
+
+### 1. Python Edge Testing (Pytest)
+Located in `tests/test_air_quality_monitor.py`. This suite validates the critical data acquisition path:
+* **SDS011 Parsing:** Verified against known-good byte frames.
+* **SQLite Persistence:** Confirms data is correctly committed to the local database.
+* **Buffering Robustness:** Simulates sensor read failures to verify the "Hold-Last-Valid" logic.
+* **Performance Benchmarking:** Ensures frame parsing remains optimized for real-time telemetry.
+
+### 2. MATLAB Intelligence Testing (Unit Test Framework)
+Located in `tests/AirQualitySystemTest.m`. This suite verifies the core data science logic:
+* **Feature Accuracy:** Confirms Z-score normalization and 7D vector extraction are numerically correct.
+* **Forecasting Stability:** Validates that the Trend Dampening factor successfully prevents recursive state drift.
+* **Dynamic Logic:** Tests that classification source detection scales correctly relative to the local environment's MAD baseline.
+
+### 3. CI/CD Pipeline (GitHub Actions)
+Every commit to the repository triggers an automated pipeline defined in `.github/workflows/ci.yml`:
+* **Linux Runner:** Verifies cross-platform compatibility.
+* **Automated Regression:** Prevents breaking changes from being merged into the master branch.
+
+---
 *Created as an advanced implementation of sensor data processing and intelligent decision making.*
