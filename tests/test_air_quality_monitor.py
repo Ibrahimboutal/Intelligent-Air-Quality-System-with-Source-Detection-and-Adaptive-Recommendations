@@ -94,14 +94,18 @@ def test_main_serial_failure(mock_sleep, mock_serial):
         pass
     assert mock_serial.called
 
+@patch('air_quality_monitor.serial.Serial')
 @patch('air_quality_monitor.socket.socket')
 @patch('air_quality_monitor.time.sleep')
 @patch('air_quality_monitor.read_sds011', return_value=(10,20))
-def test_main_telemetry_failure(mock_read, mock_sleep, mock_sock):
+def test_main_telemetry_failure(mock_read, mock_sleep, mock_sock, mock_serial):
     """Verifies that telemetry socket failures don't crash the main loop."""
     mock_sock_inst = MagicMock()
     mock_sock_inst.connect.side_effect = socket.error("Refused")
     mock_sock.return_value = mock_sock_inst
+    
+    # Mock serial to avoid connection error
+    mock_serial.return_value = MagicMock()
     
     mock_sleep.side_effect = StopIteration("End of test")
     try:
