@@ -1,0 +1,14 @@
+[Unit]
+Description=Air Quality Monitoring Service
+After=multi-user.target
+
+[Service]
+# CHANGE THESE PATHS TO MATCH YOUR RASPBERRY PI SETUP
+ExecStart=/usr/bin/python3 /home/pi/Intelligent-Air-Quality-System/scripts/air_quality_monitor.py
+WorkingDirectory=/home/pi/Intelligent-Air-Quality-System
+Restart=always
+RestartSec=5
+User=pi
+
+[Install]
+WantedBy=multi-user.target

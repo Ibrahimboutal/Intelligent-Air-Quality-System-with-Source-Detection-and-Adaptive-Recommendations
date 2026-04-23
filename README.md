@@ -63,6 +63,55 @@ To run the system with your physical sensor, set `simulationMode = false;` in `m
 ### No Hardware? Try Simulation Mode
 If you want to review the source detection algorithms without the hardware, leave `simulationMode = true;` in `main.m`. This injects synthetic pollution events (dust, combustion, coarse particles) to demonstrate the classification tree.
 
+## 🛡️ Phase 1: Making the System Robust
+To ensure the system runs autonomously and survives crashes/reboots, we use a Python-based background service on the Raspberry Pi.
+
+### 1. Deploy the Monitoring Script
+Copy `scripts/air_quality_monitor.py` to your Raspberry Pi. This script is built to be "crash-proof" with internal error handling and automatic serial reconnection.
+
+### 2. Setup Auto-start (systemd)
+1. Copy `air_quality.service` to `/etc/systemd/system/air_quality.service` on the Pi:
+   ```bash
+   sudo cp air_quality.service /etc/systemd/system/air_quality.service
+   ```
+2. Edit the service file to match your user and paths:
+   ```bash
+   sudo nano /etc/systemd/system/air_quality.service
+   ```
+3. Enable and start the service:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable air_quality.service
+   sudo systemctl start air_quality.service
+   ```
+
+### 3. Benefits
+* **Auto-start:** The system starts collecting data as soon as the Pi boots.
+* **Crash-proof:** If the script fails, systemd restarts it automatically. Internal `try/except` blocks handle sensor glitches.
+* **SSH Independence:** The system runs in the background. You can disconnect your SSH session without stopping data collection.
+
+## 📊 Phase 2: Fixing the Data Pipeline
+The system now features a robust dual-storage architecture and intelligent data buffering.
+
+### 1. Dual-Storage Architecture
+Data is now stored in two formats simultaneously:
+* **CSV (`logs/`):** Session-specific files preserved for easy import into MATLAB.
+* **SQLite (`air_quality.db`):** A centralized, structured database for long-term reliability and complex querying.
+
+### 2. Standardized Data Format
+All records follow a strict schema:
+| Column | Type | Description |
+| :--- | :--- | :--- |
+| `timestamp` | TEXT | ISO-style date and time (YYYY-MM-DD HH:MM:SS) |
+| `pm25` | REAL | PM2.5 concentration in $\mu g/m^3$ |
+| `pm10` | REAL | PM10 concentration in $\mu g/m^3$ |
+
+### 3. Intelligent Data Buffering
+To prevent "silent gaps" in your data if the sensor temporarily glitches:
+* The script maintains a buffer of the **last valid reading**.
+* If a read fails, the system logs the buffered value and records a warning in `error.log`.
+* This ensures your time-series analysis remains continuous even during minor hardware hiccups.
+
 ## 🧠 The Intelligence & Data Science Module
 
 The core of the system resides in `src/AirQualitySystem.m` and represents a Master's level data science pipeline:

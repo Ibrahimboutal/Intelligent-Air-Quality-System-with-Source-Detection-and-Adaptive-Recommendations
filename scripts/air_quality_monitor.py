@@ -1,0 +1,166 @@
+import serial
+import time
+import datetime
+import os
+import csv
+import logging
+import sqlite3
+
+# --- Configuration ---
+SERIAL_PORT = '/dev/ttyUSB0'
+BAUD_RATE = 9600
+LOG_DIR = 'logs'
+ERROR_LOG = 'error.log'
+DATA_FILE_PREFIX = 'AQI_Log'
+DB_NAME = 'air_quality.db'
+
+# Setup error logging
+logging.basicConfig(
+    filename=ERROR_LOG,
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def init_db():
+    """Initializes the SQLite database and creates the table if it doesn't exist."""
+    try:
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS data (
+            timestamp TEXT,
+            pm25 REAL,
+            pm10 REAL
+        )
+        ''')
+        conn.commit()
+        return conn
+    except Exception as e:
+        logging.error(f"Failed to initialize database: {e}")
+        return None
+
+def read_sds011(ser):
+    """
+    Reads a single frame from the SDS011 sensor.
+    Frame format: 0xAA, 0xC0, PM2.5_Low, PM2.5_High, PM10_Low, PM10_High, ID1, ID2, Checksum, 0xAB
+    """
+    try:
+        # Wait for header 0xAA
+        while True:
+            b = ser.read(1)
+            if not b:
+                return None
+            if ord(b) == 0xAA:
+                break
+        
+        # Read the rest of the 10-byte frame
+        data = ser.read(9)
+        if len(data) < 9:
+            return None
+            
+        # Verify tail
+        if data[8] != 0xAB:
+            return None
+            
+        # Parse PM values
+        pm25 = ((data[2] * 256) + data[1]) / 10.0
+        pm10 = ((data[4] * 256) + data[3]) / 10.0
+        
+        return pm25, pm10
+        
+    except Exception as e:
+        logging.error(f"Error reading from sensor: {e}")
+        return None
+
+def main():
+    print("Starting Intelligent Air Quality Monitor (Standalone Mode)...")
+    
+    # Ensure log directory exists
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+        
+    # Initialize Database
+    db_conn = init_db()
+    if db_conn:
+        print(f"SQLite Database {DB_NAME} initialized.")
+    
+    # Create a new log file for this session (CSV)
+    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+    log_file = os.path.join(LOG_DIR, f"{DATA_FILE_PREFIX}_{timestamp}.csv")
+    
+    print(f"Logging data to {log_file}")
+    
+    # Initialize CSV
+    with open(log_file, 'w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['Timestamp', 'PM25', 'PM10'])
+
+    ser = None
+    
+    # Data Buffering: Keep track of last valid readings
+    last_pm25 = None
+    last_pm10 = None
+    
+    while True:
+        try:
+            # Attempt to open serial port
+            if ser is None or not ser.is_open:
+                print(f"Attempting to connect to sensor on {SERIAL_PORT}...")
+                ser = serial.Serial(SERIAL_PORT, baudrate=BAUD_RATE, timeout=2)
+                print("Connection established.")
+            
+            # Read sensor data
+            result = read_sds011(ser)
+            
+            now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            
+            if result:
+                pm25, pm10 = result
+                # Update buffer
+                last_pm25, last_pm10 = pm25, pm10
+                status = "OK"
+            else:
+                # Use buffered values if sensor fails (Phase 2 Requirement 6)
+                if last_pm25 is not None:
+                    pm25, pm10 = last_pm25, last_pm10
+                    status = "BUFFERED"
+                    logging.warning(f"Sensor read failed at {now}. Using buffered values.")
+                else:
+                    pm25, pm10 = None, None
+                    status = "NULL"
+                    logging.error(f"Sensor read failed at {now}. No buffered data available.")
+
+            if pm25 is not None:
+                print(f"[{now}] PM2.5: {pm25} | PM10: {pm10} | Status: {status}")
+                
+                # 1. Persistent CSV logging (for MATLAB compatibility)
+                with open(log_file, 'a', newline='') as f:
+                    writer = csv.writer(f)
+                    writer.writerow([now, pm25, pm10])
+                
+                # 2. Structured SQLite logging (for system reliability)
+                if db_conn:
+                    try:
+                        cursor = db_conn.cursor()
+                        cursor.execute('INSERT INTO data (timestamp, pm25, pm10) VALUES (?, ?, ?)', (now, pm25, pm10))
+                        db_conn.commit()
+                    except Exception as e:
+                        logging.error(f"Database write error: {e}")
+            
+            time.sleep(1) # Sample every second
+            
+        except serial.SerialException as e:
+            logging.error(f"Serial connection error: {e}")
+            print(f"Serial error: {e}. Retrying in 5 seconds...")
+            if ser:
+                ser.close()
+            ser = None
+            time.sleep(5)
+            
+        except Exception as e:
+            logging.error(f"Unexpected error: {e}")
+            print(f"Unexpected error: {e}. Continuing...")
+            time.sleep(1)
+
+if __name__ == "__main__":
+    main()
