@@ -13,38 +13,34 @@ fprintf('=== Offline ML Training & Evaluation Pipeline ===\n\n');
 
 %% 1. Data Collection Placeholder
 fprintf('1. Collecting/Generating Dataset...\n');
-% Placeholder: Generate synthetic dataset representing physical events
-% Replace this block with readtable('your_physical_data.csv') once collected!
-N = 2000;
-X_raw = zeros(N, 7);
-Y = strings(N, 1);
+%% 1. Data Collection Phase
+fprintf('1. Loading Physical Dataset from logs...\n');
 
-for i = 1:N
-    pm25_base = 10 + 5*rand();
-    pm10_base = 12 + 6*rand();
-    
-    sourceType = randi(4);
-    if sourceType == 1 % Clean
-        X_raw(i,:) = [pm25_base/pm10_base, 2*randn(), pm25_base, pm25_base, 1+rand(), 0, 3];
-        Y(i) = "Clean";
-    elseif sourceType == 2 % Combustion
-        pm25 = pm25_base + 50 + 20*rand();
-        pm10 = pm10_base + 55 + 20*rand();
-        X_raw(i,:) = [pm25/pm10, 5+5*rand(), pm25-10, pm25-20, 10+5*rand(), 2*rand(), 4+rand()];
-        Y(i) = "Combustion (cooking / smoke)";
-    elseif sourceType == 3 % Dust Spike
-        pm25 = pm25_base + 30 + 10*rand();
-        pm10 = pm10_base + 35 + 10*rand();
-        X_raw(i,:) = [pm25/pm10, 15+10*rand(), pm25-15, pm25-25, 15+5*rand(), -1+2*rand(), 5+2*rand()];
-        Y(i) = "Dust / Sudden disturbance";
-    else % Coarse Particles
-        pm25 = pm25_base + 5 + 5*rand();
-        pm10 = pm10_base + 40 + 20*rand();
-        X_raw(i,:) = [pm25/pm10, 2+3*rand(), pm25-2, pm25-5, 5+2*rand(), 0.5*rand(), 3+rand()];
-        Y(i) = "Coarse particles (outdoor dust)";
-    end
+% Path to your collected data
+logDir = '../logs';
+logFiles = dir(fullfile(logDir, 'AQI_Log_*.csv'));
+
+if isempty(logFiles)
+    error('No log files found in %s. Please run a monitoring session first to collect data!', logDir);
 end
-Y = categorical(Y);
+
+% Auto-select the most recent log file
+[~, idx] = sort([logFiles.datenum], 'descend');
+latestLog = fullfile(logDir, logFiles(idx(1)).name);
+fprintf('   Training on: %s\n', latestLog);
+
+% Load the data
+dataTbl = readtable(latestLog);
+
+% Extract Features (7D) and Source Labels
+% The Features are stored in columns 4 through 10 based on our logging format
+X_raw = dataTbl{:, 4:10}; 
+Y_raw = dataTbl.Source;
+
+% Convert labels to categorical for training
+Y = categorical(Y_raw);
+N = size(X_raw, 1);
+fprintf('   Successfully loaded %d physical samples.\n', N);
 
 %% 2. Train-Test Split (80/20)
 fprintf('2. Performing Train-Test Split (80%% / 20%%)...\n');
