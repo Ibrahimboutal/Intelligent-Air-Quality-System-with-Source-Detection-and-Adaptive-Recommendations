@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  aq_monitor:
+    build: .
+    container_name: air_quality_monitor
+    restart: always
+    devices:
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    environment:
+      - SERIAL_PORT=/dev/ttyUSB0
+      - BAUD_RATE=9600
+      - MATLAB_IP=192.168.1.10  # Update with your PC's IP
+      - MATLAB_PORT=5005
+    volumes:
+      - ./logs:/app/logs
+      - ./air_quality.db:/app/air_quality.db

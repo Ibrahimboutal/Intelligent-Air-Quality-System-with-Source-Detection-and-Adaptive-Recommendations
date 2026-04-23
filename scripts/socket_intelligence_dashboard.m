@@ -20,8 +20,8 @@ annotationPanel = annotation('textbox', [0.1, 0.85, 0.8, 0.1], ...
     'String', 'Initializing Telemetry...', 'FitBoxToText', 'on', ...
     'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold');
 
-% Create TCP Server
-server = tcpserver("0.0.0.0", port);
+% Create TCP Server (Enhancement: Add Timeout to prevent readline deadlock)
+server = tcpserver("0.0.0.0", port, "Timeout", 1);
 
 % Initialize Data Science state (AirQualitySystem object)
 % Note: We use the AirQualitySystem class to reuse the intelligence logic

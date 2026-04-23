@@ -51,13 +51,18 @@ def read_sds011(ser):
     Frame format: 0xAA, 0xC0, PM2.5_Low, PM2.5_High, PM10_Low, PM10_High, ID1, ID2, Checksum, 0xAB
     """
     try:
-        # Wait for header 0xAA
-        while True:
+        # Wait for header 0xAA with safety limit
+        max_bytes_to_read = 100
+        bytes_read = 0
+        while bytes_read < max_bytes_to_read:
             b = ser.read(1)
             if not b:
                 return None
             if ord(b) == 0xAA:
                 break
+            bytes_read += 1
+        else:
+            return None # Failed to find header within limits
         
         # Read the rest of the 10-byte frame
         data = ser.read(9)
