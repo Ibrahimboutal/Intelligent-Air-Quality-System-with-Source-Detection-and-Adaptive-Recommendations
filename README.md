@@ -51,9 +51,9 @@ cd Intelligent-Air-Quality-System
 ### 2. Configure Hardware Connection
 Create a `.env` file in the project root (you can copy `.env.example`) and configure your Raspberry Pi credentials:
 ```env
-PI_IP=192.168.43.16
-PI_USER=admin
-PI_PASS=thingspeak
+PI_IP=xxx.xxx.x.xxx
+PI_USER=yourusername
+PI_PASS=yourpassword
 SERIAL_PORT=/dev/ttyUSB0
 ```
 
