@@ -12,10 +12,16 @@ addpath('src'); % Add the source directory to the MATLAB path
 % Set this to false when you have your Raspberry Pi and SDS011 connected
 simulationMode = true; 
 
-pi_ip = '192.168.43.16';
-pi_user = 'admin';
-pi_pass = 'thingspeak';
-serial_port = '/dev/ttyUSB0';
+% Load credentials from .env file securely
+loadEnv('.env');
+
+pi_ip = getenv('PI_IP');
+
+pi_user = getenv('PI_USER');
+
+pi_pass = getenv('PI_PASS');
+
+serial_port = getenv('SERIAL_PORT');
 
 %% 2. Initialize System
 disp('Initializing Intelligent Air Quality System...');

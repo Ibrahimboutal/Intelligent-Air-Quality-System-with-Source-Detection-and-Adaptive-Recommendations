@@ -1,0 +1,7 @@
+# Ignore environment variables file
+.env
+
+# MATLAB specific
+*.mat
+*.asv
+*.slxc
