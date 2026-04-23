@@ -3,7 +3,8 @@
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2023a+-blue.svg)
 ![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-Supported-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-![Coverage](https://codecov.io/gh/ibrahimaliali/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/branch/main/graph/badge.svg)
+
+![Coverage](https://app.codecov.io/gh/Ibrahimboutal/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/branch/main/graph/badge.svg)
 
 An intelligent, rule-based Air Quality Monitoring system that goes beyond simple data logging. Built with **MATLAB** and deployed via **Raspberry Pi**, this system interfaces with a **Nova PM SDS011** sensor to provide real-time feature extraction, event detection, source classification, and adaptive recommendations.
 
