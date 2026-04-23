@@ -44,9 +44,9 @@ cd Intelligent-Air-Quality-System
 ### 2. Configure Hardware Connection
 Open `main.m` in MATLAB and configure your Raspberry Pi credentials:
 ```matlab
-pi_ip = '192.168.43.16';
-pi_user = 'admin';
-pi_pass = 'thingspeak';
+pi_ip = 'xx.xx.xx.xxx';
+pi_user = 'pi';
+pi_pass = 'xxxx';
 serial_port = '/dev/ttyUSB0';
 ```
 
