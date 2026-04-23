@@ -10,7 +10,7 @@ addpath('src'); % Add the source directory to the MATLAB path
 
 %% 1. Configuration
 % Set this to false when you have your Raspberry Pi and SDS011 connected
-simulationMode = true; 
+simulationMode = false; 
 
 % Load credentials from .env file securely
 loadEnv('.env');
