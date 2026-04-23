@@ -109,26 +109,30 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
         %% 5. Model Loading (Constructor Test)
         function testModelLoading(testCase)
             % Test failure path (handled in constructor)
-            % This exercises the "Falling back to heuristics" branch
             obj = AirQualitySystem('1.1.1.1', 'pi', 'pass', 'COM1', 9600, true);
             testCase.verifyEmpty(obj.MLModel);
             
-            % To exercise the success path, we would need to place a file at 'models/trainedModel.mat'
-            % relative to the CWD. We'll attempt this robustly.
-            if ~exist('models', 'dir'), mkdir('models'); end
-            modelPath = fullfile('models', 'trainedModel.mat');
+            % Use absolute paths to avoid CI environment issues
+            cwd = pwd;
+            modelDir = fullfile(cwd, 'models');
+            if ~exist(modelDir, 'dir')
+                mkdir(modelDir);
+            end
+            modelPath = fullfile(modelDir, 'trainedModel.mat');
             
             % Save a dummy model
             MLModel = 1; FeatureMu = zeros(1,7); FeatureSigma = ones(1,7);
             save(modelPath, 'MLModel', 'FeatureMu', 'FeatureSigma');
             
-            % Now constructor should "load" it
+            % Verify file exists before proceeding
+            testCase.verifyTrue(exist(modelPath, 'file') == 2);
+            
+            % Now constructor should "load" it (assuming it runs in the same CWD)
             obj2 = AirQualitySystem('1.1.1.1', 'pi', 'pass', 'COM1', 9600, true);
-            % Even if it's not a real model, it should load the variables
             testCase.verifyNotEmpty(obj2.MLModel);
             
             % Cleanup
-            delete(modelPath);
+            if exist(modelPath, 'file'), delete(modelPath); end
         end
         
         %% 6. Data Persistence (cleanupTimer)
