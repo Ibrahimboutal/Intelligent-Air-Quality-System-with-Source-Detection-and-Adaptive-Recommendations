@@ -3,7 +3,6 @@
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2023a+-blue.svg)
 ![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-Supported-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
-
 [![codecov](https://codecov.io/gh/Ibrahimboutal/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/branch/main/graph/badge.svg)](https://codecov.io/gh/Ibrahimboutal/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations)
 
 
