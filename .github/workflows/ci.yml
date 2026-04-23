@@ -32,7 +32,7 @@ jobs:
       with:
         file: ./coverage.xml
         flags: python
-        token: 6c26628e-7584-4704-b3eb-ea253f01f750 
+        token: ${{ secrets.CODECOV_TOKEN }}
 
   matlab-tests:
     name: MATLAB Intelligence Hub Tests
@@ -54,4 +54,4 @@ jobs:
       with:
         file: ./coverage_matlab.xml
         flags: matlab
-        token: 6c26628e-7584-4704-b3eb-ea253f01f750
+        token: ${{ secrets.CODECOV_TOKEN }}
