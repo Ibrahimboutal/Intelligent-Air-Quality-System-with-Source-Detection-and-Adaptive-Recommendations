@@ -42,13 +42,18 @@ Y = categorical(Y_raw);
 N = size(X_raw, 1);
 fprintf('   Successfully loaded %d physical samples.\n', N);
 
-%% 2. Train-Test Split (80/20)
-fprintf('2. Performing Train-Test Split (80%% / 20%%)...\n');
-cv = cvpartition(N, 'HoldOut', 0.2);
-X_train_raw = X_raw(training(cv), :);
-Y_train     = Y(training(cv));
-X_test_raw  = X_raw(test(cv), :);
-Y_test      = Y(test(cv));
+%% 2. Chronological Train-Test Split (80/20)
+% For time-series data, we must split chronologically to prevent data leakage 
+% (using future data to predict the past).
+fprintf('2. Performing Chronological Train-Test Split (80%% / 20%%)...\n');
+splitIdx = round(N * 0.8);
+
+X_train_raw = X_raw(1:splitIdx, :);
+Y_train     = Y(1:splitIdx);
+X_test_raw  = X_raw(splitIdx+1:end, :);
+Y_test      = Y(splitIdx+1:end);
+
+fprintf('   Training on first %d samples, testing on final %d samples.\n', splitIdx, N - splitIdx);
 
 %% 3. Feature Scaling (Z-score Normalization)
 fprintf('3. Calculating Z-score normalization parameters...\n');

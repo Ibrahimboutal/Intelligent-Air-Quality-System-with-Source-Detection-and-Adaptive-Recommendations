@@ -5,6 +5,8 @@ import os
 import csv
 import logging
 import sqlite3
+import socket
+import json
 
 # --- Configuration ---
 SERIAL_PORT = '/dev/ttyUSB0'
@@ -13,6 +15,10 @@ LOG_DIR = 'logs'
 ERROR_LOG = 'error.log'
 DATA_FILE_PREFIX = 'AQI_Log'
 DB_NAME = 'air_quality.db'
+
+# TCP Telemetry Configuration (Fix: Reduce Integration Latency)
+MATLAB_IP = '127.0.0.1'  # Update with your PC's IP address
+MATLAB_PORT = 5005
 
 # Setup error logging
 logging.basicConfig(
@@ -73,7 +79,7 @@ def read_sds011(ser):
         return None
 
 def main():
-    print("Starting Intelligent Air Quality Monitor (Standalone Mode)...")
+    print("Starting Intelligent Air Quality Monitor (Telemetry Mode)...")
     
     # Ensure log directory exists
     if not os.path.exists(LOG_DIR):
@@ -88,7 +94,7 @@ def main():
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
     log_file = os.path.join(LOG_DIR, f"{DATA_FILE_PREFIX}_{timestamp}.csv")
     
-    print(f"Logging data to {log_file}")
+    print(f"Logging data locally to {log_file}")
     
     # Initialize CSV
     with open(log_file, 'w', newline='') as f:
@@ -96,6 +102,7 @@ def main():
         writer.writerow(['Timestamp', 'PM25', 'PM10'])
 
     ser = None
+    sock = None
     
     # Data Buffering: Keep track of last valid readings
     last_pm25 = None
@@ -103,42 +110,46 @@ def main():
     
     while True:
         try:
-            # Attempt to open serial port
+            # 1. Hardware Connection
             if ser is None or not ser.is_open:
-                print(f"Attempting to connect to sensor on {SERIAL_PORT}...")
+                print(f"Connecting to SDS011 on {SERIAL_PORT}...")
                 ser = serial.Serial(SERIAL_PORT, baudrate=BAUD_RATE, timeout=2)
-                print("Connection established.")
             
-            # Read sensor data
+            # 2. Telemetry Connection (Fix: Socket client for real-time push)
+            if sock is None:
+                try:
+                    print(f"Attempting Telemetry link to MATLAB at {MATLAB_IP}:{MATLAB_PORT}...")
+                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    sock.settimeout(1)
+                    sock.connect((MATLAB_IP, MATLAB_PORT))
+                    print("Telemetry link established.")
+                except Exception:
+                    sock = None # Retry in next loop
+            
+            # 3. Data Acquisition
             result = read_sds011(ser)
-            
             now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             
             if result:
                 pm25, pm10 = result
-                # Update buffer
                 last_pm25, last_pm10 = pm25, pm10
                 status = "OK"
             else:
-                # Use buffered values if sensor fails (Phase 2 Requirement 6)
                 if last_pm25 is not None:
                     pm25, pm10 = last_pm25, last_pm10
                     status = "BUFFERED"
-                    logging.warning(f"Sensor read failed at {now}. Using buffered values.")
                 else:
                     pm25, pm10 = None, None
                     status = "NULL"
-                    logging.error(f"Sensor read failed at {now}. No buffered data available.")
 
             if pm25 is not None:
                 print(f"[{now}] PM2.5: {pm25} | PM10: {pm10} | Status: {status}")
                 
-                # 1. Persistent CSV logging (for MATLAB compatibility)
+                # --- Persistent Local Logging ---
                 with open(log_file, 'a', newline='') as f:
                     writer = csv.writer(f)
                     writer.writerow([now, pm25, pm10])
                 
-                # 2. Structured SQLite logging (for system reliability)
                 if db_conn:
                     try:
                         cursor = db_conn.cursor()
@@ -146,20 +157,27 @@ def main():
                         db_conn.commit()
                     except Exception as e:
                         logging.error(f"Database write error: {e}")
+                
+                # --- Real-Time Telemetry Push ---
+                if sock:
+                    try:
+                        packet = json.dumps({'timestamp': now, 'pm25': pm25, 'pm10': pm10}).encode('utf-8')
+                        sock.sendall(packet + b'\n')
+                    except Exception as e:
+                        print(f"Telemetry link lost: {e}")
+                        sock.close()
+                        sock = None
             
             time.sleep(1) # Sample every second
             
         except serial.SerialException as e:
             logging.error(f"Serial connection error: {e}")
-            print(f"Serial error: {e}. Retrying in 5 seconds...")
-            if ser:
-                ser.close()
+            if ser: ser.close()
             ser = None
             time.sleep(5)
             
         except Exception as e:
             logging.error(f"Unexpected error: {e}")
-            print(f"Unexpected error: {e}. Continuing...")
             time.sleep(1)
 
 if __name__ == "__main__":

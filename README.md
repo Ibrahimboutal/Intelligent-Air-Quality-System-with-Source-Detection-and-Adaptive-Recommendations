@@ -179,48 +179,36 @@ The system evaluates four distinct inputs to generate real-time recommendations:
 ### 3. Usage
 Run `scripts/adaptive_intelligence_system.m` in MATLAB to generate the **Master Dashboard**, which visualizes the entire end-to-end intelligence pipeline.
 
-## 🔗 Phase 7: Live Integration & Dashboard
-The final phase establishes a clean, near real-time link between your Raspberry Pi and MATLAB.
+## 🔗 Phase 7: High-Performance Socket Integration
+The system now features a professional-grade telemetry link using direct **TCP Sockets** for zero-latency intelligence.
 
-### 1. Minimal Edge Processing
-Following best practices for distributed systems, the Python script on the Raspberry Pi remains **minimal**. It focuses exclusively on:
-* Hardware communication (Serial/SDS011).
-* Reliable storage (CSV/SQLite).
-* Background persistence (systemd).
+### 1. High-Performance Telemetry
+Instead of polling slow CSV files, the Raspberry Pi now acts as a **TCP Client** that pushes JSON data packets directly to MATLAB as soon as they are read from the sensor.
+* **Benefit:** Eliminates 5-second polling delay and disk I/O overhead.
+* **Port:** 5005 (Configurable in `scripts/air_quality_monitor.py`).
 
-This "thin-edge" architecture ensures the Pi remains responsive and low-power, while the "heavy lifting" of data science is performed in MATLAB.
+### 2. Zero-Latency Dashboard
+Use `scripts/socket_intelligence_dashboard.m` to start a high-performance TCP Server in MATLAB. This dashboard provides near-instantaneous visualization and classification.
 
-### 2. Live Intelligence Dashboard
-The script `scripts/live_intelligence_dashboard.m` provides a continuous monitoring loop (Option B):
-* **Polling:** Every 5 seconds, MATLAB reads the latest data from the shared log directory.
-* **Instant Intelligence:** It re-calculates features, source classifications, and forecasts on the fly.
-* **Dynamic Visualization:** The dashboard updates in real-time, changing color based on the current recommendation (Green for Acceptable, Orange for Pre-emptive, Red for Danger).
+---
 
-### 3. Usage
-1. Start the monitoring service on your Raspberry Pi.
-2. Ensure the `logs/` directory is accessible to your PC (e.g., via a network share or shared folder).
-3. Run `scripts/live_intelligence_dashboard.m` in MATLAB.
-4. Watch your air quality intelligence update live!
+## 🧠 Advanced Data Science & Robustness
+The system has been hardened against common data science pitfalls:
 
-## 🧠 The Intelligence & Data Science Module
+### 1. Statistical Rigor (No Data Leakage)
+The training pipeline (`scripts/train_offline_model.m`) now uses a **Chronological Split** (first 80% for training, last 20% for testing). This respects the temporal dependencies of air quality data and ensures that reported accuracy is realistic for real-world deployment.
 
-The core of the system resides in `src/AirQualitySystem.m` and represents a Master's level data science pipeline:
+### 2. Recursive Stability (Dampened Forecasting)
+The Holt-Winters forecasting algorithm now includes a **Trend Dampening Factor ($\phi = 0.98$)**. This prevents "state drift" where extreme short-term events could permanently skew the long-term trend, ensuring the system remains stable over months of continuous operation.
 
-### Offline Training & Evaluation
-To ensure zero-latency startup and rigorous validation, the system uses an offline training pipeline (`scripts/train_offline_model.m`).
-* **Evaluation Metrics:** The model is validated using **Confusion Matrices, Precision, Recall, and F1-Scores** on a 20% unseen test set before deployment.
-* **Feature Scaling:** The system applies **Z-score normalization** ($Z = \frac{x - \mu}{\sigma}$) to the feature vector using parameters derived from the training distribution, ensuring algorithm interchangeability and statistical consistency.
+### 3. Dynamic Intelligence (Environment-Adaptive Heuristics)
+Static thresholds are gone. The system's fallback logic now **dynamically scales** based on the environmental baseline:
+* It calculates the **Median** and **Median Absolute Deviation (MAD)** of your specific deployment area.
+* Events are flagged when they deviate significantly from *your* local baseline, rather than using arbitrary numbers.
 
-### Machine Learning Classification
-The system extracts a **7-Dimensional Feature Vector** (Ratio, Rate of Change, Moving Averages, Volatility, Skewness, Kurtosis) and feeds it into a pre-trained **Random Forest Classifier** to determine the source of the pollution (e.g., Cooking Smoke vs. Outdoor Dust). If the trained model is missing, it gracefully falls back to rule-based heuristics.
+---
 
-### Predictive Time-Series Forecasting
-Instead of just reacting to bad air, the system uses a **Recursive Holt-Winters Exponential Smoothing** algorithm ($O(1)$ complexity) to look into the future. By maintaining state variables (Level and Trend) and updating them incrementally, the system achieves significant computational efficiency over sliding-window methods. If the air is clean now but forecasted to spike in 15 minutes, the system issues a **Pre-emptive Warning**.
-
-### Data Provenance
-Data is logged persistently. At the end of every session, the system automatically writes all raw sensor data, extracted normalized features, ML predictions, and forecasts to a timestamped `.csv` file in the `logs/` directory.
-
-### 🔬 FSDA Integration (Robust Statistics)
+## 🔬 FSDA Integration (Robust Statistics)
 This project is integrated with the **Flexible Statistics and Data Analysis (FSDA)** toolbox for MATLAB, which is widely used in academic research.
 After the real-time monitoring session completes, the system automatically triggers a robust post-analysis phase using the `FSM` (Forward Search for Multivariate Outliers) algorithm. 
 This allows the system to discover masked pollution anomalies in the joint $[PM_{2.5}, PM_{10}]$ feature space that traditional `mean + std` thresholds might miss.

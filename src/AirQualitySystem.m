@@ -298,7 +298,7 @@ classdef AirQualitySystem < handle
                 threshold = 20;
             end
             
-            % --- ML Classification vs Heuristic Fallback ---
+            % --- Dynamic Heuristics (Fix: Avoid Hardcoded Thresholds) ---
             if pm25 > threshold
                 if ~isempty(obj.MLModel)
                     % Use trained Random Forest model
@@ -311,12 +311,20 @@ classdef AirQualitySystem < handle
                         source = string(predSource);
                     end
                 else
-                    % Fallback Heuristics
+                    % Fallback Dynamic Heuristics
                     ratio = features(1);
                     roc = features(2);
+                    
+                    % Calculate environmental baseline for dynamic scaling
+                    history = obj.PM25Data(max(1, k-300):max(1, k-1));
+                    env_median = median(history, 'omitnan');
+                    env_mad = mad(history, 1, 'omitnan');
+                    if isnan(env_mad) || env_mad == 0, env_mad = 5; end
+                    
+                    % Heuristic decision logic scaled by environment
                     if ratio > 0.8
                         source = "Combustion (cooking / smoke)";
-                    elseif roc > 10
+                    elseif roc > (env_median + 2*env_mad)
                         source = "Dust / Sudden disturbance";
                     elseif ratio < 0.5
                         source = "Coarse particles (outdoor dust)";
@@ -396,6 +404,7 @@ classdef AirQualitySystem < handle
             % Hyperparameters
             alpha = 0.5; % Level smoothing
             beta  = 0.3; % Trend smoothing
+            phi   = 0.98; % Dampening factor (Fix: Prevent State Drift)
             
             if k == 1 || isnan(obj.HW_Level)
                 % Initialization
@@ -403,19 +412,21 @@ classdef AirQualitySystem < handle
                 obj.HW_Trend = 0;
                 predictedPM25 = y;
             else
-                % Recursive Update
+                % Recursive Update with Trend Dampening
                 L_prev = obj.HW_Level;
                 T_prev = obj.HW_Trend;
                 
-                L_new = alpha * y + (1 - alpha) * (L_prev + T_prev);
-                T_new = beta * (L_new - L_prev) + (1 - beta) * T_prev;
+                L_new = alpha * y + (1 - alpha) * (L_prev + phi * T_prev);
+                T_new = beta * (L_new - L_prev) + (1 - beta) * phi * T_prev;
                 
                 % Store State
                 obj.HW_Level = L_new;
                 obj.HW_Trend = T_new;
                 
-                % Multi-step Forecast
-                predictedPM25 = L_new + horizon * T_new;
+                % Multi-step Forecast with Dampening
+                % Forecast = L + (phi^1 + phi^2 + ... + phi^h) * T
+                steps = 1:horizon;
+                predictedPM25 = L_new + sum(phi.^steps) * T_new;
             end
             
             predictedPM25 = max(0, predictedPM25); % Enforce non-negativity
