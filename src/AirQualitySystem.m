@@ -26,6 +26,11 @@ classdef AirQualitySystem < handle
         MLModel
         FeatureMatrix
         ForecastData
+        FeatureMu       % Mean for Z-score scaling
+        FeatureSigma    % StdDev for Z-score scaling
+        HW_Level        % Recursive Holt-Winters Level
+        HW_Trend        % Recursive Holt-Winters Trend
+        
         
         % Hardware objects
         PiObj
@@ -61,8 +66,27 @@ classdef AirQualitySystem < handle
             obj.FeatureMatrix = [];
             obj.ForecastData = [];
             
-            % Initialize Machine Learning Module
-            obj.trainClassifier();
+            % Initialize Recursive State
+            obj.HW_Level = NaN;
+            obj.HW_Trend = 0;
+            
+            % Load Pre-trained Machine Learning Module (Zero-latency startup)
+            modelPath = fullfile('models', 'trainedModel.mat');
+            if exist(modelPath, 'file')
+                try
+                    data = load(modelPath);
+                    obj.MLModel = data.MLModel;
+                    obj.FeatureMu = data.FeatureMu;
+                    obj.FeatureSigma = data.FeatureSigma;
+                    fprintf('Pre-trained ML model loaded successfully (Zero-latency startup).\n');
+                catch ME
+                    fprintf('Failed to load pre-trained model: %s. Falling back to heuristics.\n', ME.message);
+                    obj.MLModel = [];
+                end
+            else
+                fprintf('Trained model not found at %s. Falling back to heuristics.\n', modelPath);
+                obj.MLModel = [];
+            end
         end
         
         function delete(obj)
@@ -354,84 +378,47 @@ classdef AirQualitySystem < handle
                 kurt15 = 3; % Normal dist kurtosis
             end
             
-            features = [ratio, roc, ma5, ma15, std5, skew15, kurt15];
+            rawFeatures = [ratio, roc, ma5, ma15, std5, skew15, kurt15];
+            
+            % Apply Z-score Normalization if scaling parameters exist
+            if ~isempty(obj.FeatureMu) && ~isempty(obj.FeatureSigma)
+                features = (rawFeatures - obj.FeatureMu) ./ obj.FeatureSigma;
+            else
+                features = rawFeatures; % Unscaled fallback
+            end
         end
         
         function predictedPM25 = forecastAQI(obj, k)
-            % Time-Series Forecasting 15 steps into the future
+            % Time-Series Forecasting using Recursive Holt-Winters (O(1) complexity)
             horizon = 15; 
+            y = obj.PM25Data(k);
             
-            if k < 10
-                predictedPM25 = obj.PM25Data(k);
-                return;
-            end
+            % Hyperparameters
+            alpha = 0.5; % Level smoothing
+            beta  = 0.3; % Trend smoothing
             
-            window = max(1, k-30):k;
-            y = obj.PM25Data(window)';
-            
-            try
-                % Simple Holt-Winters / Exponential Smoothing
-                alpha = 0.5; beta = 0.3;
-                L = y(1); T = 0;
-                for i = 2:length(y)
-                    L_new = alpha * y(i) + (1 - alpha) * (L + T);
-                    T_new = beta * (L_new - L) + (1 - beta) * T;
-                    L = L_new;
-                    T = T_new;
-                end
-                predictedPM25 = L + horizon * T;
-                predictedPM25 = max(0, predictedPM25); % Non-negative
-            catch
-                predictedPM25 = obj.PM25Data(k); % Fallback to current
-            end
-        end
-        
-        function trainClassifier(obj)
-            % Generates a synthetic dataset and trains a Random Forest ensemble
-            fprintf('Initializing Machine Learning module...\n');
-            if exist('fitcensemble', 'file') == 2
-                try
-                    fprintf('Training Random Forest classifier on synthetic dataset...\n');
-                    N = 1000;
-                    X = zeros(N, 7);
-                    Y = strings(N, 1);
-                    
-                    for i = 1:N
-                        pm25_base = 10 + 5*rand();
-                        pm10_base = 12 + 6*rand();
-                        
-                        sourceType = randi(4);
-                        if sourceType == 1 % Clean
-                            X(i,:) = [pm25_base/pm10_base, 2*randn(), pm25_base, pm25_base, 1+rand(), 0, 3];
-                            Y(i) = "Clean";
-                        elseif sourceType == 2 % Combustion
-                            pm25 = pm25_base + 50 + 20*rand();
-                            pm10 = pm10_base + 55 + 20*rand();
-                            X(i,:) = [pm25/pm10, 5+5*rand(), pm25-10, pm25-20, 10+5*rand(), 2*rand(), 4+rand()];
-                            Y(i) = "Combustion (cooking / smoke)";
-                        elseif sourceType == 3 % Dust Spike
-                            pm25 = pm25_base + 30 + 10*rand();
-                            pm10 = pm10_base + 35 + 10*rand();
-                            X(i,:) = [pm25/pm10, 15+10*rand(), pm25-15, pm25-25, 15+5*rand(), -1+2*rand(), 5+2*rand()];
-                            Y(i) = "Dust / Sudden disturbance";
-                        else % Coarse Particles
-                            pm25 = pm25_base + 5 + 5*rand();
-                            pm10 = pm10_base + 40 + 20*rand();
-                            X(i,:) = [pm25/pm10, 2+3*rand(), pm25-2, pm25-5, 5+2*rand(), 0.5*rand(), 3+rand()];
-                            Y(i) = "Coarse particles (outdoor dust)";
-                        end
-                    end
-                    
-                    obj.MLModel = fitcensemble(X, Y, 'Method', 'Bag', 'NumLearningCycles', 50);
-                    fprintf('Random Forest trained successfully.\n');
-                catch ME
-                    fprintf('Failed to train ML model: %s. Falling back to heuristics.\n', ME.message);
-                    obj.MLModel = [];
-                end
+            if k == 1 || isnan(obj.HW_Level)
+                % Initialization
+                obj.HW_Level = y;
+                obj.HW_Trend = 0;
+                predictedPM25 = y;
             else
-                fprintf('Statistics and Machine Learning Toolbox not found. Falling back to heuristics.\n');
-                obj.MLModel = [];
+                % Recursive Update
+                L_prev = obj.HW_Level;
+                T_prev = obj.HW_Trend;
+                
+                L_new = alpha * y + (1 - alpha) * (L_prev + T_prev);
+                T_new = beta * (L_new - L_prev) + (1 - beta) * T_prev;
+                
+                % Store State
+                obj.HW_Level = L_new;
+                obj.HW_Trend = T_new;
+                
+                % Multi-step Forecast
+                predictedPM25 = L_new + horizon * T_new;
             end
+            
+            predictedPM25 = max(0, predictedPM25); % Enforce non-negativity
         end
         
         function runFSDAAnalysis(obj)

@@ -67,14 +67,19 @@ If you want to review the source detection algorithms without the hardware, leav
 
 The core of the system resides in `src/AirQualitySystem.m` and represents a Master's level data science pipeline:
 
+### Offline Training & Evaluation
+To ensure zero-latency startup and rigorous validation, the system uses an offline training pipeline (`scripts/train_offline_model.m`).
+* **Evaluation Metrics:** The model is validated using **Confusion Matrices, Precision, Recall, and F1-Scores** on a 20% unseen test set before deployment.
+* **Feature Scaling:** The system applies **Z-score normalization** ($Z = \frac{x - \mu}{\sigma}$) to the feature vector using parameters derived from the training distribution, ensuring algorithm interchangeability and statistical consistency.
+
 ### Machine Learning Classification
-The system extracts a **7-Dimensional Feature Vector** (Ratio, Rate of Change, Moving Averages, Volatility, Skewness, Kurtosis) and feeds it into a **Random Forest Classifier** to determine the source of the pollution (e.g., Cooking Smoke vs. Outdoor Dust). If the Statistics and Machine Learning Toolbox is unavailable, it gracefully falls back to rule-based heuristics.
+The system extracts a **7-Dimensional Feature Vector** (Ratio, Rate of Change, Moving Averages, Volatility, Skewness, Kurtosis) and feeds it into a pre-trained **Random Forest Classifier** to determine the source of the pollution (e.g., Cooking Smoke vs. Outdoor Dust). If the trained model is missing, it gracefully falls back to rule-based heuristics.
 
 ### Predictive Time-Series Forecasting
-Instead of just reacting to bad air, the system uses **Holt-Winters Exponential Smoothing** to look into the future. If the air is clean now but forecasted to spike in 15 minutes, the system issues a **Pre-emptive Warning**.
+Instead of just reacting to bad air, the system uses a **Recursive Holt-Winters Exponential Smoothing** algorithm ($O(1)$ complexity) to look into the future. By maintaining state variables (Level and Trend) and updating them incrementally, the system achieves significant computational efficiency over sliding-window methods. If the air is clean now but forecasted to spike in 15 minutes, the system issues a **Pre-emptive Warning**.
 
 ### Data Provenance
-Data is logged persistently. At the end of every session, the system automatically writes all raw sensor data, extracted multidimensional features, ML predictions, and forecasts to a timestamped `.csv` file in the `logs/` directory.
+Data is logged persistently. At the end of every session, the system automatically writes all raw sensor data, extracted normalized features, ML predictions, and forecasts to a timestamped `.csv` file in the `logs/` directory.
 
 ### 🔬 FSDA Integration (Robust Statistics)
 This project is integrated with the **Flexible Statistics and Data Analysis (FSDA)** toolbox for MATLAB, which is widely used in academic research.
