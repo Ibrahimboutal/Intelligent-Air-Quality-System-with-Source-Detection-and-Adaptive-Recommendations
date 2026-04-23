@@ -317,9 +317,17 @@ classdef AirQualitySystem < handle
                     
                     % Calculate environmental baseline for dynamic scaling
                     history = obj.PM25Data(max(1, k-300):max(1, k-1));
-                    env_median = median(history, 'omitnan');
-                    env_mad = mad(history, 1, 'omitnan');
-                    if isnan(env_mad) || env_mad == 0, env_mad = 5; end
+                    valid_history = history(~isnan(history));
+                    
+                    if isempty(valid_history)
+                        env_median = 10;
+                        env_mad = 5;
+                    else
+                        env_median = median(valid_history);
+                        env_mad = mad(valid_history, 1);
+                    end
+                    
+                    if env_mad == 0, env_mad = 5; end
                     
                     % Heuristic decision logic scaled by environment
                     if ratio > 0.8
