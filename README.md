@@ -3,6 +3,7 @@
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2023a+-blue.svg)
 ![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-Supported-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Coverage](https://codecov.io/gh/ibrahimaliali/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/branch/main/graph/badge.svg)
 
 An intelligent, rule-based Air Quality Monitoring system that goes beyond simple data logging. Built with **MATLAB** and deployed via **Raspberry Pi**, this system interfaces with a **Nova PM SDS011** sensor to provide real-time feature extraction, event detection, source classification, and adaptive recommendations.
 
@@ -232,10 +233,11 @@ Located in `tests/AirQualitySystemTest.m`. This suite verifies the core data sci
 * **Forecasting Stability:** Validates that the Trend Dampening factor successfully prevents recursive state drift.
 * **Dynamic Logic:** Tests that classification source detection scales correctly relative to the local environment's MAD baseline.
 
-### 3. CI/CD Pipeline (GitHub Actions)
+### 3. CI/CD Pipeline & Coverage (GitHub Actions + Codecov)
 Every commit to the repository triggers an automated pipeline defined in `.github/workflows/ci.yml`:
-* **Linux Runner:** Verifies cross-platform compatibility.
-* **Automated Regression:** Prevents breaking changes from being merged into the master branch.
+* **Automated Regression:** Prevents breaking changes from being merged.
+* **Code Coverage:** The pipeline generates coverage reports for both Python (`pytest-cov`) and MATLAB (`Cobertura`).
+* **Codecov Integration:** Results are automatically uploaded to Codecov, ensuring that new features maintain high test density across both the edge service and the intelligence hub.
 
 ---
 *Created as an advanced implementation of sensor data processing and intelligent decision making.*
