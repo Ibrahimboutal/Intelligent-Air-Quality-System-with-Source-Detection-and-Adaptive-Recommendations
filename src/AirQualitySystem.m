@@ -203,6 +203,54 @@ classdef AirQualitySystem < handle
             end
         end
         
+        function runFSDAAnalysis(obj)
+            % Post-monitoring robust analysis using FSDA (Flexible Statistics and Data Analysis)
+            % This method performs robust multivariate outlier detection to find hidden pollution anomalies.
+            
+            fprintf('\n--- Starting FSDA Robust Analysis ---\n');
+            if isempty(obj.PM25Data) || length(obj.PM25Data) < 10
+                fprintf('Not enough data to run FSDA analysis.\n');
+                return;
+            end
+            
+            try
+                % Check if FSDA is installed by looking for FSM function
+                if exist('FSM', 'file') ~= 2
+                    fprintf('FSDA toolbox not found in MATLAB path. Skipping robust analysis.\n');
+                    fprintf('Please install FSDA to enable advanced robust statistics.\n');
+                    return;
+                end
+                
+                % Prepare multivariate data matrix: [PM2.5, PM10]
+                Y = [obj.PM25Data', obj.PM10Data'];
+                
+                % Use FSM (Forward Search for Multivariate Outliers)
+                % This robustly identifies pollution events without being skewed by extreme spikes
+                fprintf('Running FSM (Forward Search for Multivariate data)...\n');
+                out = FSM(Y, 'plots', 1, 'msg', 0);
+                
+                numOutliers = length(out.outliers);
+                fprintf('FSDA detected %d robust anomalies in the data stream.\n', numOutliers);
+                
+                % Add a new figure summarizing the FSDA results
+                figure('Name', 'FSDA Robust Analysis Results', 'Color', 'w');
+                scatter(Y(:,1), Y(:,2), 50, 'b', 'filled'); hold on;
+                if numOutliers > 0
+                    scatter(Y(out.outliers, 1), Y(out.outliers, 2), 100, 'r', 'filled', 'MarkerEdgeColor', 'k');
+                    legend('Normal Measurements', 'Robust FSDA Anomalies', 'Location', 'best');
+                else
+                    legend('Measurements');
+                end
+                title('FSDA Bivariate Outlier Detection (PM_{2.5} vs PM_{10})', 'FontWeight', 'bold');
+                xlabel('PM2.5 Concentration (\mu g / m^3)');
+                ylabel('PM10 Concentration (\mu g / m^3)');
+                grid on;
+                
+            catch ME
+                fprintf('An error occurred during FSDA analysis: %s\n', ME.message);
+            end
+        end
+        
         function setupDashboard(obj)
             % Initializes the real-time plot
             obj.FigureHandle = figure('Name', 'Intelligent Air Quality Monitor', ...

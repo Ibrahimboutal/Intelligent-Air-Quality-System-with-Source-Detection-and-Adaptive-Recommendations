@@ -64,5 +64,10 @@ The core of the system resides in `src/AirQualitySystem.m` inside the `analyze()
 * **Coarse Particles (Dust):** Characterized by a low ratio (< 0.5).
 * **Sudden Disturbances:** Detected via high rate-of-change (differential) calculus.
 
+### 🔬 FSDA Integration (Robust Statistics)
+This project is integrated with the **Flexible Statistics and Data Analysis (FSDA)** toolbox for MATLAB, which is widely used in academic research.
+After the real-time monitoring session completes, the system automatically triggers a robust post-analysis phase using the `FSM` (Forward Search for Multivariate Outliers) algorithm. 
+This allows the system to discover masked pollution anomalies in the joint $[PM_{2.5}, PM_{10}]$ feature space that traditional `mean + std` thresholds might miss.
+
 ---
 *Created as an advanced implementation of sensor data processing and intelligent decision making.*

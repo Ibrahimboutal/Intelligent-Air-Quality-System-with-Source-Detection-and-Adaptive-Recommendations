@@ -34,4 +34,8 @@ aqSystem.connect();
 num_samples = 100; % Number of seconds to run
 aqSystem.run(num_samples);
 
+%% 4. Advanced Robust Analysis (FSDA)
+% Performs post-processing on the collected data to find hidden anomalies.
+aqSystem.runFSDAAnalysis();
+
 disp('Script finished.');
