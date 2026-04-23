@@ -112,6 +112,94 @@ To prevent "silent gaps" in your data if the sensor temporarily glitches:
 * If a read fails, the system logs the buffered value and records a warning in `error.log`.
 * This ensures your time-series analysis remains continuous even during minor hardware hiccups.
 
+## 🧠 Phase 3: Feature Engineering (Intelligence)
+Once data is collected, we use MATLAB to transform raw sensor values into actionable intelligence.
+
+### 1. Core Feature Extraction
+The script `scripts/feature_engineering.m` processes the standardized CSV logs to calculate:
+* **Moving Averages (`movmean`):** Smooths out high-frequency noise from the laser sensor.
+* **Rate of Change (`diff`):** Measures the velocity of pollution influx, used to detect sudden events.
+* **PM Ratio:** Calculates $PM_{2.5} / PM_{10}$, a critical signature for distinguishing between combustion (high ratio) and physical dust (low ratio).
+
+### 2. Event Detection
+The system implements a **Spike Detection** algorithm. By comparing the instantaneous rate of change against a defined threshold (e.g., $10 \mu g/m^3/s$), the system can automatically flag sudden disturbances for further investigation.
+
+### 3. Usage
+1. Open MATLAB.
+2. Navigate to the `scripts/` folder.
+3. Run `feature_engineering.m`.
+4. The script will automatically load your latest log file and visualize the results.
+
+## 🤖 Phase 4: Hybrid Source Detection
+The system employs a hybrid intelligence model that combines human-explainable logic with machine learning.
+
+### 1. Rule-Based Classification (Explainable AI)
+We first apply a rule-based system to label the data. This provides a transparent "ground truth" based on known physical properties:
+* **Traffic:** High $PM_{2.5}$ with relatively low $PM_{10}$.
+* **Dust:** Very high $PM_{10}$ levels.
+* **Local Event:** Triggered by sudden spikes in $PM_{2.5}$.
+* **Normal:** Baseline air quality.
+
+### 2. Random Forest Integration (Advanced ML)
+Using the `scripts/source_detection_ml.m` script, the system trains a **Random Forest Classifier (`TreeBagger`)** on a 6-dimensional feature vector.
+* **Algorithm:** An ensemble of 50 decision trees.
+* **Features:** `pm25`, `pm10`, `pm25_avg`, `pm10_avg`, `pm25_diff`, `ratio`.
+* **Output:** A robust `.mat` model that can be used for real-time classification in future sessions.
+
+### 3. Usage
+1. Open `scripts/source_detection_ml.m` in MATLAB.
+2. Run the script to train the model on your collected data.
+3. The script will output the **Out-of-Bag (OOB) Error** and visualize which features (like the Ratio) were most important for detection.
+
+## 🔮 Phase 5: Time Series Forecasting
+The system includes a predictive module to move from reactive monitoring to pre-emptive warnings.
+* **Forecasting Model:** Uses a Linear Regression model (`fitlm`) to predict future values based on current concentrations.
+* **Pre-emptive Warnings:** If the forecasted value exceeds healthy thresholds (e.g., $60 \mu g/m^3$), the system issues a warning *before* the air quality actually worsens.
+
+## ✅ Phase 6: Adaptive Recommendation System
+The final layer of the system is the **Adaptive Intelligence Engine** implemented in `scripts/adaptive_intelligence_system.m`.
+
+### 1. Decision Logic
+The system evaluates four distinct inputs to generate real-time recommendations:
+1. **Current Values:** Is the air healthy right now?
+2. **Trend (Velocity):** Is the pollution rising rapidly?
+3. **Forecasts:** What is the air quality expected to be in the next sample?
+4. **Detected Source:** Is the pollution from traffic, dust, or a local event?
+
+### 2. Adaptive Output
+| Scenario | Recommendation |
+| :--- | :--- |
+| PM2.5 > 50 | **DANGER:** Wear mask & activate purifier |
+| Rapid Increase or Forecasted Spike | **PRE-EMPTIVE:** Close windows - quality worsening |
+| Dust Source Detected | **CAUTION:** Outdoor dust detected - avoid exercise |
+| Normal Baseline | Air is acceptable |
+
+### 3. Usage
+Run `scripts/adaptive_intelligence_system.m` in MATLAB to generate the **Master Dashboard**, which visualizes the entire end-to-end intelligence pipeline.
+
+## 🔗 Phase 7: Live Integration & Dashboard
+The final phase establishes a clean, near real-time link between your Raspberry Pi and MATLAB.
+
+### 1. Minimal Edge Processing
+Following best practices for distributed systems, the Python script on the Raspberry Pi remains **minimal**. It focuses exclusively on:
+* Hardware communication (Serial/SDS011).
+* Reliable storage (CSV/SQLite).
+* Background persistence (systemd).
+
+This "thin-edge" architecture ensures the Pi remains responsive and low-power, while the "heavy lifting" of data science is performed in MATLAB.
+
+### 2. Live Intelligence Dashboard
+The script `scripts/live_intelligence_dashboard.m` provides a continuous monitoring loop (Option B):
+* **Polling:** Every 5 seconds, MATLAB reads the latest data from the shared log directory.
+* **Instant Intelligence:** It re-calculates features, source classifications, and forecasts on the fly.
+* **Dynamic Visualization:** The dashboard updates in real-time, changing color based on the current recommendation (Green for Acceptable, Orange for Pre-emptive, Red for Danger).
+
+### 3. Usage
+1. Start the monitoring service on your Raspberry Pi.
+2. Ensure the `logs/` directory is accessible to your PC (e.g., via a network share or shared folder).
+3. Run `scripts/live_intelligence_dashboard.m` in MATLAB.
+4. Watch your air quality intelligence update live!
+
 ## 🧠 The Intelligence & Data Science Module
 
 The core of the system resides in `src/AirQualitySystem.m` and represents a Master's level data science pipeline:
