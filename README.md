@@ -21,17 +21,19 @@ An intelligent, rule-based Air Quality Monitoring system that goes beyond simple
 
 ```mermaid
 flowchart LR
-    A[SDS011 Sensor] -->|Serial| B[Raspberry Pi]
-    B -->|Network| C[MATLAB Acquisition]
-    C --> D[Advanced Feature Engineering]
-    D --> E[Random Forest Classifier]
-    C --> H[Time-Series Forecaster]
-    E --> F[Live Dashboard]
-    H --> G[Pre-emptive Recommendation System]
-    E --> G
-    C -.-> I[(CSV Data Logger)]
-    D -.-> I
-    H -.-> I
+    subgraph "Raspberry Pi (Edge)"
+        A[SDS011 Sensor] -->|Serial| B[Python Robust Service]
+        B -->|Storage| C[(CSV / SQLite)]
+    end
+    
+    subgraph "MATLAB (Intelligence)"
+        C -.->|Live Polling| D[Feature Engineering]
+        D --> E[Source Detection]
+        D --> F[Forecasting]
+        E --> G[Adaptive Recommendation System]
+        F --> G
+        G --> H[Live Dashboard]
+    end
 ```
 
 ## 🛠️ Hardware Requirements
