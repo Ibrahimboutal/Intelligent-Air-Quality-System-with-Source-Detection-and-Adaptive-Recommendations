@@ -22,6 +22,11 @@ classdef AirQualitySystem < handle
         MaxSteps
         TimerObj
         
+        % Data Science & Intelligence objects
+        MLModel
+        FeatureMatrix
+        ForecastData
+        
         % Hardware objects
         PiObj
         SerialDevObj
@@ -53,6 +58,11 @@ classdef AirQualitySystem < handle
             obj.PM10Data = [];
             obj.SourceData = strings(0);
             obj.AdviceData = strings(0);
+            obj.FeatureMatrix = [];
+            obj.ForecastData = [];
+            
+            % Initialize Machine Learning Module
+            obj.trainClassifier();
         end
         
         function delete(obj)
@@ -94,6 +104,8 @@ classdef AirQualitySystem < handle
             obj.PM10Data = NaN(1, numSamples);
             obj.SourceData = strings(1, numSamples);
             obj.AdviceData = strings(1, numSamples);
+            obj.FeatureMatrix = NaN(numSamples, 7);
+            obj.ForecastData = NaN(1, numSamples);
             
             fprintf('Starting intelligent monitoring for %d samples...\n', numSamples);
             fprintf('------------------------------------------------------------\n');
@@ -126,8 +138,14 @@ classdef AirQualitySystem < handle
             obj.PM25Data(k) = pm25;
             obj.PM10Data(k) = pm10;
             
-            % 2. Intelligence: Extract & Classify
-            [source, advice] = obj.analyze(k);
+            % 2. Intelligence: Advanced Features, Forecast, & Classify
+            features = obj.extractFeatures(k);
+            obj.FeatureMatrix(k, :) = features;
+            
+            predictedPM25 = obj.forecastAQI(k);
+            obj.ForecastData(k) = predictedPM25;
+            
+            [source, advice] = obj.analyze(k, features, predictedPM25);
             obj.SourceData(k) = source;
             obj.AdviceData(k) = advice;
             
@@ -155,6 +173,31 @@ classdef AirQualitySystem < handle
                     stop(obj.TimerObj);
                 end
                 delete(obj.TimerObj);
+            end
+            
+            % --- Persistent Data Logging Pipeline ---
+            fprintf('\nInitiating Persistent Data Logging...\n');
+            try
+                if ~exist('logs', 'dir')
+                    mkdir('logs');
+                end
+                
+                % Slice valid data
+                validIdx = ~isnan(obj.TimeArray);
+                if any(validIdx)
+                    T = table(obj.TimeArray(validIdx)', obj.PM25Data(validIdx)', obj.PM10Data(validIdx)', ...
+                              obj.FeatureMatrix(validIdx, :), obj.ForecastData(validIdx)', ...
+                              obj.SourceData(validIdx)', obj.AdviceData(validIdx)', ...
+                              'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_7D', 'Forecast_PM25', 'Source', 'Advice'});
+                    
+                    filename = fullfile('logs', sprintf('AQI_Log_%s.csv', datestr(now, 'yyyymmdd_HHMMSS')));
+                    writetable(T, filename);
+                    fprintf('Successfully saved %d records to %s\n', sum(validIdx), filename);
+                else
+                    fprintf('No valid data collected to save.\n');
+                end
+            catch ME
+                fprintf(2, 'Failed to save log data: %s\n', ME.message);
             end
         end
         
@@ -217,18 +260,9 @@ classdef AirQualitySystem < handle
             pm10 = max(0, pm10);
         end
         
-        function [source, advice] = analyze(obj, k)
+        function [source, advice] = analyze(obj, k, features, predictedPM25)
             % Core AI / Intelligence logic
             pm25 = obj.PM25Data(k);
-            pm10 = obj.PM10Data(k);
-            
-            % Feature Extraction
-            ratio = pm25 / max(pm10, 0.1); % avoid div by zero
-            if k > 1
-                rate_of_change = pm25 - obj.PM25Data(k-1);
-            else
-                rate_of_change = 0;
-            end
             
             % Smart Thresholding (dynamic based on moving window)
             if k > 5
@@ -240,28 +274,163 @@ classdef AirQualitySystem < handle
                 threshold = 20;
             end
             
-            % Classification Tree
+            % --- ML Classification vs Heuristic Fallback ---
             if pm25 > threshold
-                if ratio > 0.8
-                    source = "Combustion (cooking / smoke)";
-                elseif rate_of_change > 10
-                    source = "Dust / Sudden disturbance";
-                elseif ratio < 0.5
-                    source = "Coarse particles (outdoor dust)";
+                if ~isempty(obj.MLModel)
+                    % Use trained Random Forest model
+                    predSource = predict(obj.MLModel, features);
+                    if iscell(predSource)
+                        source = string(predSource{1});
+                    elseif iscategorical(predSource)
+                        source = string(predSource);
+                    else
+                        source = string(predSource);
+                    end
                 else
-                    source = "General pollution";
+                    % Fallback Heuristics
+                    ratio = features(1);
+                    roc = features(2);
+                    if ratio > 0.8
+                        source = "Combustion (cooking / smoke)";
+                    elseif roc > 10
+                        source = "Dust / Sudden disturbance";
+                    elseif ratio < 0.5
+                        source = "Coarse particles (outdoor dust)";
+                    else
+                        source = "General pollution";
+                    end
                 end
             else
                 source = "Clean";
             end
             
-            % Adaptive Recommendations
-            if pm25 < 15
-                advice = "Air is clean";
-            elseif pm25 < 35
-                advice = "Moderate - consider ventilation";
-            else
+            % --- Predictive Recommendations ---
+            if pm25 >= 35
                 advice = "Unhealthy - open window / reduce activity";
+            elseif predictedPM25 >= 35
+                advice = "PRE-EMPTIVE WARNING: Forecasted Spike - Close Windows Now";
+            elseif pm25 >= 15
+                advice = "Moderate - consider ventilation";
+            elseif predictedPM25 >= 15
+                advice = "Forecasted Moderate - monitor conditions";
+            else
+                advice = "Air is clean";
+            end
+        end
+        
+        function features = extractFeatures(obj, k)
+            % Extract a 7D feature vector for Machine Learning
+            pm25 = obj.PM25Data(k);
+            pm10 = max(obj.PM10Data(k), 0.1);
+            
+            % 1. Ratio
+            ratio = pm25 / pm10;
+            
+            % 2. Rate of Change
+            if k > 1
+                roc = pm25 - obj.PM25Data(k-1);
+            else
+                roc = 0;
+            end
+            
+            % Moving Windows
+            w5 = max(1, k-5):k;
+            w15 = max(1, k-15):k;
+            
+            % 3 & 4. Moving Averages
+            ma5 = mean(obj.PM25Data(w5), 'omitnan');
+            ma15 = mean(obj.PM25Data(w15), 'omitnan');
+            
+            % 5. Volatility (Std Dev)
+            std5 = std(obj.PM25Data(w5), 'omitnan');
+            if isnan(std5), std5 = 0; end
+            
+            % 6 & 7. Skewness and Kurtosis
+            if length(w15) >= 4
+                skew15 = skewness(obj.PM25Data(w15), 1);
+                kurt15 = kurtosis(obj.PM25Data(w15), 1);
+            else
+                skew15 = 0;
+                kurt15 = 3; % Normal dist kurtosis
+            end
+            
+            features = [ratio, roc, ma5, ma15, std5, skew15, kurt15];
+        end
+        
+        function predictedPM25 = forecastAQI(obj, k)
+            % Time-Series Forecasting 15 steps into the future
+            horizon = 15; 
+            
+            if k < 10
+                predictedPM25 = obj.PM25Data(k);
+                return;
+            end
+            
+            window = max(1, k-30):k;
+            y = obj.PM25Data(window)';
+            
+            try
+                % Simple Holt-Winters / Exponential Smoothing
+                alpha = 0.5; beta = 0.3;
+                L = y(1); T = 0;
+                for i = 2:length(y)
+                    L_new = alpha * y(i) + (1 - alpha) * (L + T);
+                    T_new = beta * (L_new - L) + (1 - beta) * T;
+                    L = L_new;
+                    T = T_new;
+                end
+                predictedPM25 = L + horizon * T;
+                predictedPM25 = max(0, predictedPM25); % Non-negative
+            catch
+                predictedPM25 = obj.PM25Data(k); % Fallback to current
+            end
+        end
+        
+        function trainClassifier(obj)
+            % Generates a synthetic dataset and trains a Random Forest ensemble
+            fprintf('Initializing Machine Learning module...\n');
+            if exist('fitcensemble', 'file') == 2
+                try
+                    fprintf('Training Random Forest classifier on synthetic dataset...\n');
+                    N = 1000;
+                    X = zeros(N, 7);
+                    Y = strings(N, 1);
+                    
+                    for i = 1:N
+                        pm25_base = 10 + 5*rand();
+                        pm10_base = 12 + 6*rand();
+                        
+                        sourceType = randi(4);
+                        if sourceType == 1 % Clean
+                            X(i,:) = [pm25_base/pm10_base, 2*randn(), pm25_base, pm25_base, 1+rand(), 0, 3];
+                            Y(i) = "Clean";
+                        elseif sourceType == 2 % Combustion
+                            pm25 = pm25_base + 50 + 20*rand();
+                            pm10 = pm10_base + 55 + 20*rand();
+                            X(i,:) = [pm25/pm10, 5+5*rand(), pm25-10, pm25-20, 10+5*rand(), 2*rand(), 4+rand()];
+                            Y(i) = "Combustion (cooking / smoke)";
+                        elseif sourceType == 3 % Dust Spike
+                            pm25 = pm25_base + 30 + 10*rand();
+                            pm10 = pm10_base + 35 + 10*rand();
+                            X(i,:) = [pm25/pm10, 15+10*rand(), pm25-15, pm25-25, 15+5*rand(), -1+2*rand(), 5+2*rand()];
+                            Y(i) = "Dust / Sudden disturbance";
+                        else % Coarse Particles
+                            pm25 = pm25_base + 5 + 5*rand();
+                            pm10 = pm10_base + 40 + 20*rand();
+                            X(i,:) = [pm25/pm10, 2+3*rand(), pm25-2, pm25-5, 5+2*rand(), 0.5*rand(), 3+rand()];
+                            Y(i) = "Coarse particles (outdoor dust)";
+                        end
+                    end
+                    
+                    obj.MLModel = fitcensemble(X, Y, 'Method', 'Bag', 'NumLearningCycles', 50);
+                    fprintf('Random Forest trained successfully.\n');
+                catch ME
+                    fprintf('Failed to train ML model: %s. Falling back to heuristics.\n', ME.message);
+                    obj.MLModel = [];
+                end
+            else
+                fprintf('Statistics and Machine Learning Toolbox not found. Falling back to heuristics.\n');
+                obj.MLModel = [];
             end
         end
         

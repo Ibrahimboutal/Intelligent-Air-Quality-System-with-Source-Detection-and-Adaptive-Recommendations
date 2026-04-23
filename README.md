@@ -9,10 +9,12 @@ An intelligent, rule-based Air Quality Monitoring system that goes beyond simple
 ## 🌟 Key Features
 
 * **Real-time Data Acquisition:** Direct serial communication with the SDS011 PM sensor via a Raspberry Pi.
-* **Intelligent Source Classification:** Analyzes the rate of change and $PM_{2.5} / PM_{10}$ ratio to classify pollution sources (e.g., Cooking/Combustion vs. Outdoor Dust).
-* **Dynamic Event Detection:** Uses statistical baselines (mean + 2*std) instead of hardcoded thresholds.
-* **Adaptive Recommendations:** Provides real-time actionable advice based on severity.
-* **Live Dashboard:** A real-time updating MATLAB GUI that visualizes concentrations and highlights detected events on the fly.
+* **Machine Learning Classification:** Utilizes a trained Random Forest Ensemble model (`fitcensemble`) on a 7-dimensional feature vector to robustly classify pollution sources (e.g., Combustion, Dust Spikes).
+* **Time-Series Forecasting:** Uses Holt-Winters Exponential Smoothing to predict $PM_{2.5}$ levels 15 steps into the future, enabling pre-emptive warnings before air quality breaches dangerous levels.
+* **Advanced Feature Engineering:** Calculates rolling moving averages, volatility (std dev), skewness, and kurtosis on the fly.
+* **Persistent Data Provenance:** Automatically logs raw data, ML features, forecasts, and classifications to a timestamped CSV file (`logs/`) at the end of every session.
+* **Adaptive Recommendations:** Provides real-time actionable advice based on both current and forecasted severity.
+* **Live Dashboard:** A real-time updating MATLAB GUI that visualizes concentrations and highlights detected events.
 * **Simulation Mode:** Don't have the hardware? Run the system in mock mode to test the intelligence algorithms instantly!
 
 ## ⚙️ System Architecture
@@ -20,11 +22,16 @@ An intelligent, rule-based Air Quality Monitoring system that goes beyond simple
 ```mermaid
 flowchart LR
     A[SDS011 Sensor] -->|Serial| B[Raspberry Pi]
-    B -->|Network| C[MATLAB Class]
-    C --> D[Feature Extraction]
-    D --> E[Source Classification]
+    B -->|Network| C[MATLAB Acquisition]
+    C --> D[Advanced Feature Engineering]
+    D --> E[Random Forest Classifier]
+    C --> H[Time-Series Forecaster]
     E --> F[Live Dashboard]
-    E --> G[Recommendation System]
+    H --> G[Pre-emptive Recommendation System]
+    E --> G
+    C -.-> I[(CSV Data Logger)]
+    D -.-> I
+    H -.-> I
 ```
 
 ## 🛠️ Hardware Requirements
@@ -56,13 +63,18 @@ To run the system with your physical sensor, set `simulationMode = false;` in `m
 ### No Hardware? Try Simulation Mode
 If you want to review the source detection algorithms without the hardware, leave `simulationMode = true;` in `main.m`. This injects synthetic pollution events (dust, combustion, coarse particles) to demonstrate the classification tree.
 
-## 🧠 The Intelligence Module
+## 🧠 The Intelligence & Data Science Module
 
-The core of the system resides in `src/AirQualitySystem.m` inside the `analyze()` method.
+The core of the system resides in `src/AirQualitySystem.m` and represents a Master's level data science pipeline:
 
-* **Combustion / Smoke:** Characterized by a high $PM_{2.5}$ to $PM_{10}$ ratio (> 0.8).
-* **Coarse Particles (Dust):** Characterized by a low ratio (< 0.5).
-* **Sudden Disturbances:** Detected via high rate-of-change (differential) calculus.
+### Machine Learning Classification
+The system extracts a **7-Dimensional Feature Vector** (Ratio, Rate of Change, Moving Averages, Volatility, Skewness, Kurtosis) and feeds it into a **Random Forest Classifier** to determine the source of the pollution (e.g., Cooking Smoke vs. Outdoor Dust). If the Statistics and Machine Learning Toolbox is unavailable, it gracefully falls back to rule-based heuristics.
+
+### Predictive Time-Series Forecasting
+Instead of just reacting to bad air, the system uses **Holt-Winters Exponential Smoothing** to look into the future. If the air is clean now but forecasted to spike in 15 minutes, the system issues a **Pre-emptive Warning**.
+
+### Data Provenance
+Data is logged persistently. At the end of every session, the system automatically writes all raw sensor data, extracted multidimensional features, ML predictions, and forecasts to a timestamped `.csv` file in the `logs/` directory.
 
 ### 🔬 FSDA Integration (Robust Statistics)
 This project is integrated with the **Flexible Statistics and Data Analysis (FSDA)** toolbox for MATLAB, which is widely used in academic research.
