@@ -7,6 +7,9 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
     
     methods(TestMethodSetup)
         function setup(testCase)
+            % Add src to path
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            
             % Initialize with mock parameters
             testCase.Sys = AirQualitySystem('127.0.0.1', 'pi', 'pass', '/dev/ttyUSB0', 9600, true);
         end
