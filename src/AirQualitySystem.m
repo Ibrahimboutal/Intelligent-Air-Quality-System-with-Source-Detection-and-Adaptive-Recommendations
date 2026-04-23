@@ -17,6 +17,10 @@ classdef AirQualitySystem < handle
         PM10Data
         SourceData
         AdviceData
+        % Execution state
+        CurrentStep
+        MaxSteps
+        TimerObj
         
         % Hardware objects
         PiObj
@@ -31,16 +35,16 @@ classdef AirQualitySystem < handle
     end
     
     methods
-        function obj = AirQualitySystem(ip, user, pass, port, simMode)
+        function obj = AirQualitySystem(ip, user, pass, port, baud, simMode)
             % Constructor
-            if nargin < 5
+            if nargin < 6
                 simMode = false;
             end
             obj.PiIPAddress = ip;
             obj.PiUsername = user;
             obj.PiPassword = pass;
             obj.Port = port;
-            obj.BaudRate = 9600;
+            obj.BaudRate = baud;
             obj.SimMode = simMode;
             
             % Initialize empty buffers
@@ -94,38 +98,64 @@ classdef AirQualitySystem < handle
             fprintf('Starting intelligent monitoring for %d samples...\n', numSamples);
             fprintf('------------------------------------------------------------\n');
             
-            for k = 1:numSamples
-                % 1. Data Acquisition
-                [pm25, pm10] = obj.readSensor(k);
-                
-                % Update buffers
-                obj.TimeArray(k) = k;
-                obj.PM25Data(k) = pm25;
-                obj.PM10Data(k) = pm10;
-                
-                % 2. Intelligence: Extract & Classify
-                [source, advice] = obj.analyze(k);
-                obj.SourceData(k) = source;
-                obj.AdviceData(k) = advice;
-                
-                % 3. Visualization
-                obj.updateDashboard(k);
-                
-                % Print to console if event detected
-                if source ~= "Clean"
-                    fprintf('Time %3d | PM2.5=%5.1f | Source: %-30s | Advice: %s\n', ...
-                        k, pm25, source, advice);
-                end
-                
-                pause(1); % 1 Hz sampling rate (typical for SDS011)
-                
-                % Early exit if figure closed
+            obj.CurrentStep = 0;
+            obj.MaxSteps = numSamples;
+            
+            % Setup non-blocking timer
+            obj.TimerObj = timer('ExecutionMode', 'fixedRate', 'Period', 1, ...
+                'TimerFcn', @(~,~) obj.timerCallback(), ...
+                'StopFcn', @(~,~) disp('Monitoring session complete.'));
+            
+            % Cleanup hook to stop timer if user interrupts execution
+            cleanupTimerHook = onCleanup(@() obj.cleanupTimer());
+            
+            start(obj.TimerObj);
+            wait(obj.TimerObj); % Wait blocks script progression but frees UI thread
+        end
+        
+        function timerCallback(obj)
+            % Executed every second by the timer
+            k = obj.CurrentStep + 1;
+            obj.CurrentStep = k;
+            
+            % 1. Data Acquisition
+            [pm25, pm10] = obj.readSensor(k);
+            
+            % Update buffers
+            obj.TimeArray(k) = k;
+            obj.PM25Data(k) = pm25;
+            obj.PM10Data(k) = pm10;
+            
+            % 2. Intelligence: Extract & Classify
+            [source, advice] = obj.analyze(k);
+            obj.SourceData(k) = source;
+            obj.AdviceData(k) = advice;
+            
+            % 3. Visualization
+            obj.updateDashboard(k);
+            
+            % Print to console if event detected
+            if source ~= "Clean"
+                fprintf('Time %3d | PM2.5=%5.1f | Source: %-30s | Advice: %s\n', ...
+                    k, pm25, source, advice);
+            end
+            
+            % Check exit conditions
+            if k >= obj.MaxSteps || ~ishghandle(obj.FigureHandle)
                 if ~ishghandle(obj.FigureHandle)
                     fprintf('Dashboard closed. Stopping monitoring.\n');
-                    break;
                 end
+                stop(obj.TimerObj);
             end
-            fprintf('Monitoring session complete.\n');
+        end
+        
+        function cleanupTimer(obj)
+            if ~isempty(obj.TimerObj) && isvalid(obj.TimerObj)
+                if strcmp(obj.TimerObj.Running, 'on')
+                    stop(obj.TimerObj);
+                end
+                delete(obj.TimerObj);
+            end
         end
         
         function [pm25, pm10] = readSensor(obj, k)
@@ -171,7 +201,8 @@ classdef AirQualitySystem < handle
                     else
                         error('Could not sync to frame header');
                     end
-                catch
+                catch ME
+                     fprintf(2, 'Hardware read error at step %d: %s\n', k, ME.message);
                      if k > 1
                         pm25 = obj.PM25Data(k-1);
                         pm10 = obj.PM10Data(k-1);
@@ -180,6 +211,10 @@ classdef AirQualitySystem < handle
                      end
                 end
             end
+            
+            % Enforce non-negativity to prevent sensor glitches from skewing ratios
+            pm25 = max(0, pm25);
+            pm10 = max(0, pm10);
         end
         
         function [source, advice] = analyze(obj, k)
@@ -241,34 +276,42 @@ classdef AirQualitySystem < handle
             end
             
             try
-                % Check if FSDA is installed by looking for FSM function
-                if exist('FSM', 'file') ~= 2
-                    fprintf('FSDA toolbox not found in MATLAB path. Skipping robust analysis.\n');
-                    fprintf('Please install FSDA to enable advanced robust statistics.\n');
-                    return;
-                end
-                
                 % Prepare multivariate data matrix: [PM2.5, PM10]
                 Y = [obj.PM25Data', obj.PM10Data'];
                 
-                % Use FSM (Forward Search for Multivariate Outliers)
-                % This robustly identifies pollution events without being skewed by extreme spikes
-                fprintf('Running FSM (Forward Search for Multivariate data)...\n');
-                out = FSM(Y, 'plots', 1, 'msg', 0);
-                
-                numOutliers = length(out.outliers);
-                fprintf('FSDA detected %d robust anomalies in the data stream.\n', numOutliers);
-                
-                % Add a new figure summarizing the FSDA results
-                figure('Name', 'FSDA Robust Analysis Results', 'Color', 'w');
-                scatter(Y(:,1), Y(:,2), 50, 'b', 'filled'); hold on;
-                if numOutliers > 0
-                    scatter(Y(out.outliers, 1), Y(out.outliers, 2), 100, 'r', 'filled', 'MarkerEdgeColor', 'k');
-                    legend('Normal Measurements', 'Robust FSDA Anomalies', 'Location', 'best');
+                % Check if FSDA is installed by looking for FSM function
+                if exist('FSM', 'file') == 2
+                    % Use FSM (Forward Search for Multivariate Outliers)
+                    fprintf('Running FSM (Forward Search for Multivariate data)...\n');
+                    out = FSM(Y, 'plots', 0, 'msg', 0);
+                    outliersIdx = out.outliers;
+                    fprintf('FSDA detected %d robust anomalies in the data stream.\n', length(outliersIdx));
+                    figTitle = 'FSDA Bivariate Outlier Detection (PM_{2.5} vs PM_{10})';
                 else
-                    legend('Measurements');
+                    fprintf('FSDA toolbox not found. Falling back to robust Mahalanobis distance.\n');
+                    % Fallback using median and MAD for robust Mahalanobis
+                    medY = median(Y, 1, 'omitnan');
+                    madY = mad(Y, 1);
+                    madY(madY == 0) = 1e-6; % Prevent division by zero
+                    
+                    % Simple standardized robust distance
+                    dist = sum(((Y - medY) ./ madY).^2, 2);
+                    chi2_thresh = chi2inv(0.975, 2); % 97.5% confidence for 2 DoF
+                    outliersIdx = find(dist > chi2_thresh);
+                    fprintf('Mahalanobis fallback detected %d anomalies.\n', length(outliersIdx));
+                    figTitle = 'Robust Mahalanobis Outlier Detection (PM_{2.5} vs PM_{10})';
                 end
-                title('FSDA Bivariate Outlier Detection (PM_{2.5} vs PM_{10})', 'FontWeight', 'bold');
+                
+                % Add a new figure summarizing the results
+                figure('Name', 'Robust Analysis Results', 'Color', 'w');
+                scatter(Y(:,1), Y(:,2), 50, 'b', 'filled'); hold on;
+                if ~isempty(outliersIdx)
+                    scatter(Y(outliersIdx, 1), Y(outliersIdx, 2), 100, 'r', 'filled', 'MarkerEdgeColor', 'k');
+                    legend('Normal Measurements', 'Detected Anomalies', 'Location', 'best');
+                else
+                    legend('Measurements', 'Location', 'best');
+                end
+                title(figTitle, 'FontWeight', 'bold');
                 xlabel('PM2.5 Concentration (\mu g / m^3)');
                 ylabel('PM10 Concentration (\mu g / m^3)');
                 grid on;
@@ -280,6 +323,10 @@ classdef AirQualitySystem < handle
         
         function setupDashboard(obj)
             % Initializes the real-time plot
+            if ~isempty(obj.FigureHandle) && ishghandle(obj.FigureHandle)
+                close(obj.FigureHandle);
+            end
+            
             obj.FigureHandle = figure('Name', 'Intelligent Air Quality Monitor', ...
                                       'Position', [100, 100, 900, 500], ...
                                       'NumberTitle', 'off', 'Color', 'w');

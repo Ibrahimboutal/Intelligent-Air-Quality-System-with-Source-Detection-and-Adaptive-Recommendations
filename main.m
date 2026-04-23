@@ -27,9 +27,16 @@ assert(~isempty(pi_pass), 'PI_PASS must be set in .env');
 serial_port = getenv('SERIAL_PORT');
 assert(~isempty(serial_port), 'SERIAL_PORT must be set in .env');
 
+baud_str = getenv('BAUD_RATE');
+assert(~isempty(baud_str), 'BAUD_RATE must be set in .env');
+baud_rate = str2double(baud_str);
+
 %% 2. Initialize System
 disp('Initializing Intelligent Air Quality System...');
-aqSystem = AirQualitySystem(pi_ip, pi_user, pi_pass, serial_port, simulationMode);
+aqSystem = AirQualitySystem(pi_ip, pi_user, pi_pass, serial_port, baud_rate, simulationMode);
+
+% Safety: Guarantee hardware release on interrupt (Ctrl+C)
+cleanupHardware = onCleanup(@() delete(aqSystem));
 
 % Connect to the hardware (or setup simulation)
 aqSystem.connect();
