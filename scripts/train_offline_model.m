@@ -18,8 +18,8 @@ fprintf('1. Collecting/Generating Dataset...\n');
 %% 1. Data Collection Phase
 fprintf('1. Loading Physical Dataset from logs...\n');
 
-% Path to your collected data
-logDir = '../logs';
+% Path to your collected data (Robust pathing for CI/CD)
+logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
 logFiles = dir(fullfile(logDir, 'AQI_Log_*.csv'));
 
 if isempty(logFiles)

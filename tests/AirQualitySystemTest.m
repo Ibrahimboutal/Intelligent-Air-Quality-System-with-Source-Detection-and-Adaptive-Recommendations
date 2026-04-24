@@ -108,7 +108,7 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             [p25_85, ~] = testCase.Sys.readSensor(85);
             testCase.verifyTrue(p25_85 > 40, 'Cycle 85 (Combustion) spike not detected');
             
-            [p10_155, ~] = testCase.Sys.readSensor(155);
+            [~, p10_155] = testCase.Sys.readSensor(155);
             testCase.verifyTrue(p10_155 > 40, 'Cycle 155 (Coarse) spike not detected');
         end
         
@@ -176,7 +176,9 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
         %% 8. Offline Training Script Coverage
         function testOfflineTrainingScript(testCase)
             % 1. Create mock data in logs/ for the script to find
-            if ~exist('logs', 'dir'), mkdir('logs'); end
+            % We use the root logs directory as defined in the script
+            logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
+            if ~exist(logDir, 'dir'), mkdir(logDir); end
             
             % Generate enough data to satisfy the 80/20 split and correlation matrix
             numSamples = 50;
@@ -186,7 +188,7 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
                       'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_7D', 'Forecast_PM25', 'Source', 'Advice'});
             
             % Save to a format the script expects (AQI_Log_*.csv)
-            logPath = fullfile('logs', 'AQI_Log_TestMock.csv');
+            logPath = fullfile(logDir, 'AQI_Log_TestMock.csv');
             writetable(T, logPath);
             
             % 2. Run the training script (relative to tests/ folder if needed)
