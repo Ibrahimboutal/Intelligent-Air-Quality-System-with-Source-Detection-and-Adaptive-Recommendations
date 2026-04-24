@@ -1,5 +1,5 @@
 # Intelligent Air Quality System with Source Detection
-
+[![Tests](https://github.com/Ibrahimboutal/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/actions/workflows/ci.yml/badge.svg)](https://github.com/Ibrahimboutal/Intelligent-Air-Quality-System-with-Source-Detection-and-Adaptive-Recommendations/actions/workflows/ci.yml)
 ![MATLAB](https://img.shields.io/badge/MATLAB-R2023a+-blue.svg)
 ![Raspberry Pi](https://img.shields.io/badge/Raspberry_Pi-Supported-red.svg)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
