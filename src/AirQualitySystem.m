@@ -233,18 +233,22 @@ classdef AirQualitySystem < handle
                 pm25 = 12 + 2 * randn();
                 pm10 = 15 + 3 * randn();
                 
-                % Inject simulated events for demonstration
-                if k >= 20 && k <= 25
+                % Inject simulated events cyclically (every 200 samples)
+                % This guarantees events appear in BOTH train and test splits
+                cycle = mod(k, 200);
+                
+                if cycle >= 20 && cycle <= 30
                     pm25 = pm25 + 30; % Dust spike
                     pm10 = pm10 + 35;
-                elseif k >= 50 && k <= 60
+                elseif cycle >= 80 && cycle <= 100
                     pm25 = pm25 + 45; % Combustion
                     pm10 = pm10 + 50;
-                elseif k >= 80 && k <= 90
+                elseif cycle >= 150 && cycle <= 165
                     pm25 = pm25 + 10; % Coarse particles
                     pm10 = pm10 + 40;
                 end
             else
+            % ... [keep the physical hardware read logic below exactly the same]
                 % Read physical sensor with synchronization
                 try
                     max_retries = 20;

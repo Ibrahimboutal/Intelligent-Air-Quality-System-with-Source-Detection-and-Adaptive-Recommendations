@@ -76,8 +76,30 @@ X_test  = (X_test_raw - FeatureMu) ./ FeatureSigma;
 
 %% 6. Model Training
 fprintf('6. Training Random Forest Ensemble...\n');
+
+% Create an observation weight vector (N x 1)
+% This mathematically forces the algorithm to pay attention to minority classes
+obsWeights = zeros(size(Y_train));
+cats = categories(Y_train);
+
+for i = 1:length(cats)
+    idx = (Y_train == cats{i});
+    classCount = sum(idx);
+    
+    if classCount > 0
+        % Inverse frequency weighting: Rare classes get massive weight multipliers
+        obsWeights(idx) = 1.0 / classCount;
+    end
+end
+
+% Normalize weights so they sum to the total number of training samples
+obsWeights = obsWeights * (length(Y_train) / sum(obsWeights));
+
 if exist('fitcensemble', 'file') == 2
-    MLModel = fitcensemble(X_train, Y_train, 'Method', 'Bag', 'NumLearningCycles', 50);
+    % Train using 'Weights' to fix the Lazy Learner problem
+    MLModel = fitcensemble(X_train, Y_train, 'Method', 'Bag', ...
+                           'NumLearningCycles', 50, ...
+                           'Weights', obsWeights);
 else
     error('Statistics and Machine Learning Toolbox is required to run this offline script.');
 end

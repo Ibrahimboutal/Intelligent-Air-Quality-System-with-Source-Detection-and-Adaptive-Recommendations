@@ -42,7 +42,7 @@ cleanupHardware = onCleanup(@() delete(aqSystem));
 aqSystem.connect();
 
 %% 3. Start Monitoring
-num_samples = 100; % Number of seconds to run
+num_samples = 1500; % Number of seconds to run
 aqSystem.run(num_samples);
 
 %% 4. Advanced Robust Analysis (FSDA)
