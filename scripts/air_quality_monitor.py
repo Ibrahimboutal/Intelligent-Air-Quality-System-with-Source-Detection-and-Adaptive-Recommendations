@@ -9,16 +9,19 @@ import socket
 import json
 
 # --- Configuration ---
-SERIAL_PORT = '/dev/ttyUSB0'
-BAUD_RATE = 9600
+SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyUSB0')
+BAUD_RATE = int(os.getenv('BAUD_RATE', 9600))
 LOG_DIR = 'logs'
 ERROR_LOG = 'error.log'
 DATA_FILE_PREFIX = 'AQI_Log'
 DB_NAME = 'air_quality.db'
+BATCH_SIZE = 60  # Commit to DB every 60 seconds to protect SD card
 
-# TCP Telemetry Configuration (Fix: Reduce Integration Latency)
-MATLAB_IP = '127.0.0.1'  # Update with your PC's IP address
-MATLAB_PORT = 5005
+# TCP Telemetry Configuration (Fix: Load from Environment)
+MATLAB_IP = os.getenv('MATLAB_IP', '127.0.0.1')
+MATLAB_PORT = int(os.getenv('MATLAB_PORT', 5005))
+USE_SSL = os.getenv('USE_SSL', 'false').lower() == 'true'
+SSL_CERT_PATH = os.getenv('SSL_CERT_PATH', '')
 
 # Setup error logging
 logging.basicConfig(
@@ -109,9 +112,10 @@ def main():
     ser = None
     sock = None
     
-    # Data Buffering: Keep track of last valid readings
+    # Data Buffering
     last_pm25 = None
     last_pm10 = None
+    db_buffer = [] # In-memory queue for batch inserts
     
     while True:
         try:
@@ -123,12 +127,23 @@ def main():
             # 2. Telemetry Connection (Fix: Socket client for real-time push)
             if sock is None:
                 try:
-                    print(f"Attempting Telemetry link to MATLAB at {MATLAB_IP}:{MATLAB_PORT}...")
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
+                    print(f"Attempting Telemetry link to MATLAB at {MATLAB_IP}:{MATLAB_PORT} (SSL: {USE_SSL})...")
+                    base_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                    base_sock.settimeout(2)
+                    
+                    if USE_SSL:
+                        import ssl
+                        context = ssl.create_default_context()
+                        if SSL_CERT_PATH:
+                            context.load_verify_locations(SSL_CERT_PATH)
+                        sock = context.wrap_socket(base_sock, server_hostname=MATLAB_IP)
+                    else:
+                        sock = base_sock
+                        
                     sock.connect((MATLAB_IP, MATLAB_PORT))
                     print("Telemetry link established.")
-                except Exception:
+                except Exception as e:
+                    logging.error(f"Telemetry link failed: {e}")
                     sock = None # Retry in next loop
             
             # 3. Data Acquisition
@@ -157,11 +172,17 @@ def main():
                 
                 if db_conn:
                     try:
-                        cursor = db_conn.cursor()
-                        cursor.execute('INSERT INTO data (timestamp, pm25, pm10) VALUES (?, ?, ?)', (now, pm25, pm10))
-                        db_conn.commit()
+                        db_buffer.append((now, pm25, pm10))
+                        
+                        # Batch Commit (O(1) amortized I/O)
+                        if len(db_buffer) >= BATCH_SIZE:
+                            cursor = db_conn.cursor()
+                            cursor.executemany('INSERT INTO data (timestamp, pm25, pm10) VALUES (?, ?, ?)', db_buffer)
+                            db_conn.commit()
+                            db_buffer = [] # Clear buffer
+                            print(f"[{now}] Batch committed to SQLite (%d records)." % BATCH_SIZE)
                     except Exception as e:
-                        logging.error(f"Database write error: {e}")
+                        logging.error(f"Database batch error: {e}")
                 
                 # --- Real-Time Telemetry Push ---
                 if sock:

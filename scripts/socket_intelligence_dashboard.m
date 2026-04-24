@@ -5,8 +5,16 @@
 
 clear; clc; close all;
 
+% Load Configuration from .env
+addpath('../src');
+loadEnv('../.env');
+
 % Configuration
-port = 5005;
+port = str2double(getenv('MATLAB_PORT'));
+if isnan(port), port = 5005; end
+
+piIP = getenv('PI_IP');
+if isempty(piIP), piIP = '127.0.0.1'; end
 
 fprintf('Starting TCP Telemetry Server on port %d...\n', port);
 fprintf('Waiting for connection from Raspberry Pi...\n');
@@ -25,7 +33,7 @@ server = tcpserver("0.0.0.0", port, "Timeout", 1);
 
 % Initialize Data Science state (AirQualitySystem object)
 % Note: We use the AirQualitySystem class to reuse the intelligence logic
-aqSystem = AirQualitySystem('127.0.0.1', 'pi', 'pass', '/dev/ttyUSB0', 9600, true);
+aqSystem = AirQualitySystem(piIP, getenv('PI_USER'), getenv('PI_PASS'), getenv('SERIAL_PORT'), str2double(getenv('BAUD_RATE')), true);
 aqSystem.setupDashboard();
 delete(aqSystem.FigureHandle); % Close the internal dashboard, we'll use this script's plots
 
