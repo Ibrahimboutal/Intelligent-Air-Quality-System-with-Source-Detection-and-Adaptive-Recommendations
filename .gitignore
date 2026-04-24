@@ -5,3 +5,6 @@
 *.mat
 *.asv
 *.slxc
+
+# Data files
+*.csv
