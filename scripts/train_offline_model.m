@@ -7,7 +7,9 @@
 % the trained model for zero-latency online inference.
 % -------------------------------------------------------------------------
 
-clc; clear; close all;
+if ~exist('isTestRun', 'var') || ~isTestRun
+    clc; clear; close all;
+end
 
 fprintf('=== Offline ML Training & Evaluation Pipeline ===\n\n');
 

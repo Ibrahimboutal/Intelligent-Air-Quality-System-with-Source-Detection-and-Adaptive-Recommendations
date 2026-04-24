@@ -101,9 +101,15 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             testCase.verifyTrue(p25 >= 0 && p25 <= 100);
             testCase.verifyTrue(p10 >= 0 && p10 <= 150);
             
-            % Test specific spike logic
-            [p25_spike, ~] = testCase.Sys.readSensor(22);
-            testCase.verifyTrue(p25_spike > 20);
+            % Test specific cycle spikes (Covering line 241 and beyond)
+            [p25_22, ~] = testCase.Sys.readSensor(22);
+            testCase.verifyTrue(p25_22 > 30, 'Cycle 22 (Dust) spike not detected');
+            
+            [p25_85, ~] = testCase.Sys.readSensor(85);
+            testCase.verifyTrue(p25_85 > 40, 'Cycle 85 (Combustion) spike not detected');
+            
+            [p10_155, ~] = testCase.Sys.readSensor(155);
+            testCase.verifyTrue(p10_155 > 40, 'Cycle 155 (Coarse) spike not detected');
         end
         
         %% 5. Model Loading (Constructor Test)
@@ -165,6 +171,39 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             testCase.Sys.PM10Data = rand(1, 20);
             testCase.Sys.runFSDAAnalysis();
             testCase.verifyTrue(true);
+        end
+        
+        %% 8. Offline Training Script Coverage
+        function testOfflineTrainingScript(testCase)
+            % 1. Create mock data in logs/ for the script to find
+            if ~exist('logs', 'dir'), mkdir('logs'); end
+            
+            % Generate enough data to satisfy the 80/20 split and correlation matrix
+            numSamples = 50;
+            T = table((1:numSamples)', rand(numSamples, 1)*50, rand(numSamples, 1)*80, ...
+                      rand(numSamples, 7), rand(numSamples, 1)*50, ...
+                      repmat("Clean", numSamples, 1), repmat("OK", numSamples, 1), ...
+                      'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_7D', 'Forecast_PM25', 'Source', 'Advice'});
+            
+            % Save to a format the script expects (AQI_Log_*.csv)
+            logPath = fullfile('logs', 'AQI_Log_TestMock.csv');
+            writetable(T, logPath);
+            
+            % 2. Run the training script (relative to tests/ folder if needed)
+            % Since CI usually runs from root, we need to handle path carefully.
+            originalPath = addpath(fullfile(pwd, '../scripts'));
+            cleanupPath = onCleanup(@() path(originalPath));
+            
+            isTestRun = true; % Set the flag for the script
+            
+            % Run the script
+            run('train_offline_model.m');
+            
+            % 3. Verifications
+            testCase.verifyTrue(exist('../models/trainedModel.mat', 'file') == 2);
+            
+            % Cleanup
+            if exist(logPath, 'file'), delete(logPath); end
         end
         
     end
