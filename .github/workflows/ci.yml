@@ -41,13 +41,14 @@ jobs:
     - uses: actions/checkout@v3
     
     - name: Set up MATLAB
-      uses: matlab-actions/setup-matlab@v1
+      uses: matlab-actions/setup-matlab@v2
       
     - name: Run MATLAB Unit Tests with Coverage
-      uses: matlab-actions/run-tests@v1
+      uses: matlab-actions/run-tests@v2
       with:
         select-by-folder: tests
         code-coverage-cobertura: coverage_matlab.xml
+        source-folder: src;scripts
         
     - name: Upload MATLAB Coverage to Codecov
       uses: codecov/codecov-action@v4
