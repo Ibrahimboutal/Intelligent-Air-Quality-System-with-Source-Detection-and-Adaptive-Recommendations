@@ -8,3 +8,12 @@
 
 # Data files
 *.csv
+
+# MAT files
+*.mat
+
+# VSCode files
+.vscode
+.idea
+
+#Coverage files

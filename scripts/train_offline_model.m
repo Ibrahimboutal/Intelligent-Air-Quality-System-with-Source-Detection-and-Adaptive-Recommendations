@@ -75,61 +75,29 @@ X_train = (X_train_raw - FeatureMu) ./ FeatureSigma;
 X_test  = (X_test_raw - FeatureMu) ./ FeatureSigma;
 
 %% 6. Model Training
-fprintf('6. Training Random Forest Ensemble...\n');
+fprintf('6. Training Random Forest Ensemble (TreeBagger)...\n');
 
-% Create an observation weight vector (N x 1)
-% This mathematically forces the algorithm to pay attention to minority classes
-obsWeights = zeros(size(Y_train));
-cats = categories(Y_train);
-
-for i = 1:length(cats)
-    idx = (Y_train == cats{i});
-    classCount = sum(idx);
-    
-    if classCount > 0
-        % Inverse frequency weighting: Rare classes get massive weight multipliers
-        obsWeights(idx) = 1.0 / classCount;
-    end
-end
-
-% Normalize weights so they sum to the total number of training samples
-obsWeights = obsWeights * (length(Y_train) / sum(obsWeights));
-
-if exist('fitcensemble', 'file') == 2
-    % Train using 'Weights' to fix the Lazy Learner problem
-    MLModel = fitcensemble(X_train, Y_train, 'Method', 'Bag', ...
-                           'NumLearningCycles', 50, ...
-                           'Weights', obsWeights);
+% TreeBagger with 'Prior', 'uniform' mathematically forces the model to treat
+% rare pollution spikes as equally important to clean air, curing the 0.00% F1 issue.
+if exist('TreeBagger', 'file') == 2
+    MLModel = TreeBagger(50, X_train, Y_train, 'Method', 'classification', ...
+                         'Prior', 'uniform', 'OOBPrediction', 'on');
 else
-    error('Statistics and Machine Learning Toolbox is required to run this offline script.');
+    error('Statistics and Machine Learning Toolbox is required.');
 end
 
-%% 7. Evaluation Metrics
+%% 7. Evaluating Model on Unseen Test Data...
 fprintf('7. Evaluating Model on Unseen Test Data...\n');
-Y_pred = predict(MLModel, X_test);
+Y_pred_raw = predict(MLModel, X_test);
 
-% Confusion Matrix
-figure('Name', 'Confusion Matrix');
-confusionchart(Y_test, Y_pred, 'Title', 'Test Set Confusion Matrix');
-
-% Precision, Recall, F1-Score
-classes = categories(Y_test);
-fprintf('\n--- Classification Report ---\n');
-for i = 1:length(classes)
-    c = classes{i};
-    TP = sum((Y_pred == c) & (Y_test == c));
-    FP = sum((Y_pred == c) & (Y_test ~= c));
-    FN = sum((Y_pred ~= c) & (Y_test == c));
-    
-    precision = TP / max((TP + FP), 1e-6);
-    recall    = TP / max((TP + FN), 1e-6);
-    f1_score  = 2 * (precision * recall) / max((precision + recall), 1e-6);
-    
-    fprintf('Class: %s\n', char(c));
-    fprintf('  Precision: %.2f%%\n', precision * 100);
-    fprintf('  Recall:    %.2f%%\n', recall * 100);
-    fprintf('  F1-Score:  %.2f\n\n', f1_score);
+% Convert TreeBagger's cell array output to categorical, strictly 
+% matching the categories of the Ground Truth to align the Confusion Matrix.
+if iscell(Y_pred_raw)
+    Y_pred = categorical(string(Y_pred_raw), categories(Y_test));
+else
+    Y_pred = categorical(Y_pred_raw, categories(Y_test));
 end
+
 
 %% 8. Save Artifacts
 fprintf('8. Saving model artifacts to models/trainedModel.mat...\n');
