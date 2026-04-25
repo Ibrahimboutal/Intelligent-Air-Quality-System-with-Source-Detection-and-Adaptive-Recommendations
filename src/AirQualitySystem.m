@@ -578,5 +578,11 @@ classdef AirQualitySystem < handle
             
             drawnow;
         end
+        function [X, y] = getTrainingData(obj)
+            % Returns features (X) and labels (y) from current session data
+            validIdx = ~isnan(obj.TimeArray) & (obj.SourceData ~= "");
+            X = obj.FeatureMatrix(validIdx, :);
+            y = categorical(obj.SourceData(validIdx)');
+        end
     end
 end
