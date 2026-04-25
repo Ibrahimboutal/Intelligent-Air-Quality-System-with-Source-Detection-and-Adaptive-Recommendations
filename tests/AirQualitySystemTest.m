@@ -148,8 +148,12 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             testCase.Sys.TimeArray = 1:numSamples;
             testCase.Sys.PM25Data = rand(1, numSamples);
             testCase.Sys.PM10Data = rand(1, numSamples);
+            testCase.Sys.PM25Filtered = rand(1, numSamples);
+            testCase.Sys.PM10Filtered = rand(1, numSamples);
             testCase.Sys.FeatureMatrix = rand(numSamples, 7);
             testCase.Sys.ForecastData = rand(1, numSamples);
+            testCase.Sys.NoveltyScores = rand(1, numSamples);
+            testCase.Sys.NoveltyData = false(1, numSamples);
             testCase.Sys.SourceData = repmat("Clean", 1, numSamples);
             testCase.Sys.AdviceData = repmat("OK", 1, numSamples);
             

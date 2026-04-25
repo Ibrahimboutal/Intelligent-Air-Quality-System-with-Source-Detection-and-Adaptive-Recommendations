@@ -272,9 +272,13 @@ classdef AirQualitySystem < handle
                 validIdx = ~isnan(obj.TimeArray);
                 if any(validIdx)
                     T = table(obj.TimeArray(validIdx)', obj.PM25Data(validIdx)', obj.PM10Data(validIdx)', ...
+                              obj.PM25Filtered(validIdx)', obj.PM10Filtered(validIdx)', ...
                               obj.FeatureMatrix(validIdx, :), obj.ForecastData(validIdx)', ...
+                              obj.NoveltyScores(validIdx)', obj.NoveltyData(validIdx)', ...
                               obj.SourceData(validIdx)', obj.AdviceData(validIdx)', ...
-                              'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_7D', 'Forecast_PM25', 'Source', 'Advice'});
+                              'VariableNames', {'Time_s', 'PM25', 'PM10', 'PM25Filtered', 'PM10Filtered', ...
+                                                'Features_7D', 'Forecast_PM25', 'NoveltyScores', 'NoveltyData', ...
+                                                'Source', 'Advice'});
                     
                     filename = fullfile('logs', sprintf('AQI_Log_%s.csv', datestr(now, 'yyyymmdd_HHMMSS')));
                     writetable(T, filename);
@@ -346,8 +350,8 @@ classdef AirQualitySystem < handle
             end
             
             % Enforce non-negativity to prevent sensor glitches from skewing ratios
-            pm25 = max(0, pm25);
-            pm10 = max(0, pm10);
+            if ~isnan(pm25), pm25 = max(0, pm25); end
+            if ~isnan(pm10), pm10 = max(0, pm10); end
         end
         
         function [source, advice] = analyze(obj, k, features, predictedPM25)
@@ -519,6 +523,15 @@ classdef AirQualitySystem < handle
             try
                 % Prepare multivariate data matrix: [PM2.5, PM10]
                 Y = [obj.PM25Data', obj.PM10Data'];
+                
+                % Remove rows with NaN values to prevent FSDA crash
+                validRows = ~isnan(Y(:,1)) & ~isnan(Y(:,2));
+                Y = Y(validRows, :);
+                
+                if isempty(Y) || size(Y, 1) < 10
+                    fprintf('Not enough valid data (excluding NaNs) to run FSDA analysis.\n');
+                    return;
+                end
                 
                 % Check if FSDA is installed by looking for FSM function
                 if exist('FSM', 'file') == 2

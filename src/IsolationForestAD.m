@@ -156,7 +156,7 @@ classdef IsolationForestAD < handle
             node.right = obj.buildTree(X(right_mask, :), depth+1, hlim);
         end
 
-        function h = pathLength(~, x, node, current_depth)
+        function h = pathLength(obj, x, node, current_depth)
             % Calculate path length of point x through a tree.
             if node.isLeaf
                 % Add adjustment for unresolved instances at leaf
@@ -164,9 +164,9 @@ classdef IsolationForestAD < handle
                 return;
             end
             if x(node.splitFeature) < node.splitValue
-                h = pathLength([], x, node.left,  current_depth + 1);
+                h = obj.pathLength(x, node.left,  current_depth + 1);
             else
-                h = pathLength([], x, node.right, current_depth + 1);
+                h = obj.pathLength(x, node.right, current_depth + 1);
             end
         end
     end
