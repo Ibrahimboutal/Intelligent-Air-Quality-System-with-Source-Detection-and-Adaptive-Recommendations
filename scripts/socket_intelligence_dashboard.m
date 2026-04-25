@@ -123,3 +123,43 @@ end
 
 clear server;
 fprintf('Server stopped.\n');
+
+% --- BATCH SAVE TO CSV UPON EXIT ---
+fprintf('Compiling session data...\n');
+
+% Trim unused pre-allocated rows to match the actual number of received packets
+validRows = 1:count;
+
+% NOTE: You'll need to make sure you added the pre-allocated log_timestamps, 
+% log_pm25, etc., variables before the while loop, and updated them inside the loop!
+if exist('log_timestamps', 'var')
+    SessionData = table(log_timestamps(validRows)', log_pm25(validRows)', ...
+                        log_pm10(validRows)', log_source(validRows)', log_features(validRows)', ...
+                        'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'Features_7D'});
+
+    if ~exist('../logs', 'dir'), mkdir('../logs'); end
+    filename = sprintf('../logs/telemetry_session_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
+    writetable(SessionData, filename);
+    fprintf('Session successfully saved to %s\n', filename);
+else
+    fprintf('Warning: RAM logging variables not found. Data not saved.\n');
+end% --- BATCH SAVE TO CSV UPON EXIT ---
+fprintf('Compiling session data...\n');
+
+% Trim unused pre-allocated rows to match the actual number of received packets
+validRows = 1:count;
+
+% NOTE: You'll need to make sure you added the pre-allocated log_timestamps, 
+% log_pm25, etc., variables before the while loop, and updated them inside the loop!
+if exist('log_timestamps', 'var')
+    SessionData = table(log_timestamps(validRows)', log_pm25(validRows)', ...
+                        log_pm10(validRows)', log_source(validRows)', log_features(validRows)', ...
+                        'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'Features_7D'});
+
+    if ~exist('../logs', 'dir'), mkdir('../logs'); end
+    filename = sprintf('../logs/telemetry_session_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
+    writetable(SessionData, filename);
+    fprintf('Session successfully saved to %s\n', filename);
+else
+    fprintf('Warning: RAM logging variables not found. Data not saved.\n');
+end
