@@ -15,6 +15,8 @@ classdef AirQualitySystem < handle
         TimeArray
         PM25Data
         PM10Data
+        PM25Filtered    % Kalman-filtered PM2.5 stream
+        PM10Filtered    % Kalman-filtered PM10 stream
         SourceData
         AdviceData
         % Execution state
@@ -31,6 +33,15 @@ classdef AirQualitySystem < handle
         HW_Level        % Recursive Holt-Winters Level
         HW_Trend        % Recursive Holt-Winters Trend
         
+        % Phase 2: Signal Processing
+        UseKalman       % Boolean: apply Kalman filter to sensor stream
+        KF_PM25         % KalmanFilter1D instance for PM2.5
+        KF_PM10         % KalmanFilter1D instance for PM10
+        
+        % Phase 5: Unsupervised Novelty Detection
+        NoveltyDetector  % IsolationForestAD instance
+        NoveltyData      % Boolean buffer: 1 = novel/unknown event
+        NoveltyScores    % Raw anomaly score buffer
         
         % Hardware objects
         PiObj
@@ -40,35 +51,63 @@ classdef AirQualitySystem < handle
         FigureHandle
         PlotLine25
         PlotLine10
+        PlotLine25F     % Filtered PM2.5 line (overlay)
         ScatterPlot
         AnnotationText
     end
     
     methods
-        function obj = AirQualitySystem(ip, user, pass, port, baud, simMode)
+        function obj = AirQualitySystem(ip, user, pass, port, baud, simMode, useKalman)
             % Constructor
-            if nargin < 6
-                simMode = false;
-            end
+            % useKalman (optional, default true): enable Kalman denoising
+            if nargin < 6, simMode = false; end
+            if nargin < 7, useKalman = true; end
+            
             obj.PiIPAddress = ip;
             obj.PiUsername = user;
             obj.PiPassword = pass;
             obj.Port = port;
             obj.BaudRate = baud;
             obj.SimMode = simMode;
+            obj.UseKalman = useKalman;
             
             % Initialize empty buffers
-            obj.TimeArray = [];
-            obj.PM25Data = [];
-            obj.PM10Data = [];
-            obj.SourceData = strings(0);
-            obj.AdviceData = strings(0);
+            obj.TimeArray    = [];
+            obj.PM25Data     = [];
+            obj.PM10Data     = [];
+            obj.PM25Filtered = [];
+            obj.PM10Filtered = [];
+            obj.SourceData   = strings(0);
+            obj.AdviceData   = strings(0);
             obj.FeatureMatrix = [];
-            obj.ForecastData = [];
+            obj.ForecastData  = [];
             
             % Initialize Recursive State
             obj.HW_Level = NaN;
             obj.HW_Trend = 0;
+            
+            % Phase 2: Initialize Kalman Filters
+            % Q=1e-4 (slow physical process), R=0.5 (moderate sensor noise)
+            obj.KF_PM25 = KalmanFilter1D(1e-4, 0.5);
+            obj.KF_PM10 = KalmanFilter1D(1e-4, 0.8);
+            if obj.UseKalman
+                fprintf('Kalman Filter denoising: ENABLED (Q=1e-4, R=0.5).\n');
+            end
+            
+            % Phase 5: Initialize Isolation Forest novelty detector
+            obj.NoveltyDetector = [];
+            noveltyModelPath = fullfile('models', 'noveltyDetector.mat');
+            if exist(noveltyModelPath, 'file')
+                try
+                    nd = load(noveltyModelPath);
+                    obj.NoveltyDetector = nd.NoveltyDetector;
+                    fprintf('Pre-trained Isolation Forest loaded (novelty detection active).\n');
+                catch
+                    fprintf('Could not load novelty detector. Run detect_novelty.m to train.\n');
+                end
+            else
+                fprintf('No novelty detector found. Run scripts/detect_novelty.m offline.\n');
+            end
             
             % Load Pre-trained Machine Learning Module (Zero-latency startup)
             modelPath = fullfile('models', 'trainedModel.mat');
@@ -123,13 +162,17 @@ classdef AirQualitySystem < handle
             obj.setupDashboard();
             
             % Preallocate arrays for performance
-            obj.TimeArray = NaN(1, numSamples);
-            obj.PM25Data = NaN(1, numSamples);
-            obj.PM10Data = NaN(1, numSamples);
-            obj.SourceData = strings(1, numSamples);
-            obj.AdviceData = strings(1, numSamples);
+            obj.TimeArray    = NaN(1, numSamples);
+            obj.PM25Data     = NaN(1, numSamples);
+            obj.PM10Data     = NaN(1, numSamples);
+            obj.PM25Filtered = NaN(1, numSamples);
+            obj.PM10Filtered = NaN(1, numSamples);
+            obj.SourceData   = strings(1, numSamples);
+            obj.AdviceData   = strings(1, numSamples);
             obj.FeatureMatrix = NaN(numSamples, 7);
-            obj.ForecastData = NaN(1, numSamples);
+            obj.ForecastData  = NaN(1, numSamples);
+            obj.NoveltyData   = false(1, numSamples);
+            obj.NoveltyScores = NaN(1, numSamples);
             
             fprintf('Starting intelligent monitoring for %d samples...\n', numSamples);
             fprintf('------------------------------------------------------------\n');
@@ -158,10 +201,16 @@ classdef AirQualitySystem < handle
             % 1. Data Acquisition
             [pm25, pm10] = obj.readSensor(k);
             
-            % Update buffers
-            obj.TimeArray(k) = k;
-            obj.PM25Data(k) = pm25;
-            obj.PM10Data(k) = pm10;
+            % Phase 2: Apply Kalman Filter denoising
+            pm25_f = obj.KF_PM25.update(pm25);
+            pm10_f = obj.KF_PM10.update(pm10);
+            
+            % Update buffers (raw + filtered)
+            obj.TimeArray(k)    = k;
+            obj.PM25Data(k)     = pm25;
+            obj.PM10Data(k)     = pm10;
+            obj.PM25Filtered(k) = pm25_f;
+            obj.PM10Filtered(k) = pm10_f;
             
             % 2. Intelligence: Advanced Features, Forecast, & Classify
             features = obj.extractFeatures(k);
@@ -173,6 +222,18 @@ classdef AirQualitySystem < handle
             [source, advice] = obj.analyze(k, features, predictedPM25);
             obj.SourceData(k) = source;
             obj.AdviceData(k) = advice;
+            
+            % Phase 5: Novelty Detection — flag unknown events in real-time
+            if ~isempty(obj.NoveltyDetector) && ~any(isnan(features))
+                nov_score = obj.NoveltyDetector.score(features);
+                is_novel  = nov_score > obj.NoveltyDetector.Threshold;
+                obj.NoveltyScores(k) = nov_score;
+                obj.NoveltyData(k)   = is_novel;
+                if is_novel && source == "Clean"
+                    fprintf('Time %3d | [NOVELTY ALERT] Unknown event detected (score=%.3f). Investigate!\n', ...
+                        k, nov_score);
+                end
+            end
             
             % 3. Visualization
             obj.updateDashboard(k);

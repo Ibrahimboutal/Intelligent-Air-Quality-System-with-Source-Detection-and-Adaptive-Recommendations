@@ -6,7 +6,7 @@
 clear; close all; clc;
 
 % --- 1. Load Data ---
-logDir = 'logs';
+logDir = '../logs';
 logFiles = dir(fullfile(logDir, '*.csv'));
 
 if isempty(logFiles)

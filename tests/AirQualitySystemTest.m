@@ -208,5 +208,136 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             if exist(logPath, 'file'), delete(logPath); end
         end
         
+        %% 9. Phase 2 — KalmanFilter1D
+        function testKalmanFilterConvergence(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            kf = KalmanFilter1D(1e-4, 0.5);
+
+            % First update should initialize state to the measurement
+            x1 = kf.update(20.0);
+            testCase.verifyEqual(x1, 20.0, 'AbsTol', 1e-9);
+
+            % After many updates on a constant signal the filter should converge
+            for i = 1:200
+                kf.update(20.0);
+            end
+            x_converged = kf.update(20.0);
+            testCase.verifyEqual(x_converged, 20.0, 'AbsTol', 0.1, ...
+                'Kalman filter did not converge to constant input');
+        end
+
+        function testKalmanFilterNonNegativity(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            kf = KalmanFilter1D(1e-4, 0.5);
+            % Feed NaN — should return NaN (no crash)
+            x = kf.update(NaN);
+            testCase.verifyTrue(isnan(x), 'NaN input should return NaN on cold start');
+            % Feed a value after NaN — should initialize
+            x2 = kf.update(15.0);
+            testCase.verifyEqual(x2, 15.0, 'AbsTol', 1e-9);
+        end
+
+        function testKalmanFilterReset(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            kf = KalmanFilter1D(1e-4, 0.5);
+            kf.update(30.0);
+            kf.reset();
+            testCase.verifyTrue(isnan(kf.x_est), 'State should be NaN after reset');
+            testCase.verifyEmpty(kf.Innovation, 'Innovation log should be empty after reset');
+        end
+
+        function testKalmanGainLogging(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            kf = KalmanFilter1D(1e-4, 0.5);
+            kf.update(10.0);          % init — no gain logged
+            kf.update(11.0);
+            kf.update(12.0);
+            % After 2 proper updates gain should be logged
+            testCase.verifyEqual(length(kf.KalmanGain), 2);
+            % Gain must be in (0, 1)
+            testCase.verifyTrue(all(kf.KalmanGain > 0 & kf.KalmanGain < 1));
+        end
+
+        %% 10. Phase 5 — IsolationForestAD
+        function testIsolationForestFit(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            iforest = IsolationForestAD(20, 32);
+            X_clean = randn(100, 3);
+            iforest.fit(X_clean);
+            testCase.verifyEqual(length(iforest.Trees), 20);
+            testCase.verifyEqual(iforest.NFitted, 100);
+        end
+
+        function testIsolationForestScoreRange(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            iforest = IsolationForestAD(20, 32);
+            X_clean = randn(100, 3);
+            iforest.fit(X_clean);
+            scores = iforest.score(X_clean);
+            testCase.verifyEqual(size(scores, 1), 100);
+            % Scores must be in (0, 1]
+            testCase.verifyTrue(all(scores > 0 & scores <= 1), ...
+                'Anomaly scores must be in (0,1]');
+        end
+
+        function testIsolationForestOutlierDetection(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            rng(42);
+            iforest = IsolationForestAD(50, 64);
+            X_normal  = randn(200, 2);               % tight Gaussian
+            X_outlier = [10, 10; -10, -10; 10, -10]; % far from origin
+            iforest.fit(X_normal);
+
+            s_normal  = iforest.score(X_normal);
+            s_outlier = iforest.score(X_outlier);
+
+            % Outliers should on average score higher than normals
+            testCase.verifyTrue(mean(s_outlier) > mean(s_normal), ...
+                'Outlier scores should be higher than normal scores');
+        end
+
+        function testIsolationForestPredict(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            rng(1);
+            iforest = IsolationForestAD(30, 64);
+            X_normal = randn(150, 2);
+            iforest.fit(X_normal);
+            labels = iforest.predict(X_normal, 0.7);  % high threshold
+            testCase.verifyEqual(numel(labels), 150);
+            testCase.verifyTrue(islogical(labels));
+        end
+
+        %% 11. Updated Constructor (7-arg with useKalman)
+        function testConstructorWithKalmanFlag(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            obj_on  = AirQualitySystem('1.1.1.1','pi','pass','/dev/ttyUSB0',9600,true,true);
+            obj_off = AirQualitySystem('1.1.1.1','pi','pass','/dev/ttyUSB0',9600,true,false);
+            testCase.verifyTrue(obj_on.UseKalman);
+            testCase.verifyFalse(obj_off.UseKalman);
+            testCase.verifyClass(obj_on.KF_PM25, 'KalmanFilter1D');
+        end
+
+        function testNoveltyBufferPreallocation(testCase)
+            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
+            obj = AirQualitySystem('1.1.1.1','pi','pass','/dev/ttyUSB0',9600,true);
+            obj.setupDashboard();
+            numSamples = 10;
+            % Manually call the preallocate logic (mirrors run())
+            obj.TimeArray     = NaN(1, numSamples);
+            obj.PM25Data      = NaN(1, numSamples);
+            obj.PM10Data      = NaN(1, numSamples);
+            obj.PM25Filtered  = NaN(1, numSamples);
+            obj.PM10Filtered  = NaN(1, numSamples);
+            obj.SourceData    = strings(1, numSamples);
+            obj.AdviceData    = strings(1, numSamples);
+            obj.FeatureMatrix = NaN(numSamples, 7);
+            obj.ForecastData  = NaN(1, numSamples);
+            obj.NoveltyData   = false(1, numSamples);
+            obj.NoveltyScores = NaN(1, numSamples);
+            testCase.verifyEqual(length(obj.NoveltyData), numSamples);
+            testCase.verifyEqual(length(obj.PM25Filtered), numSamples);
+            delete(obj.FigureHandle);
+        end
+
     end
 end

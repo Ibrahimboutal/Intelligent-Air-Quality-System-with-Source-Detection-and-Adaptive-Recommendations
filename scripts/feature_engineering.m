@@ -34,16 +34,16 @@ fprintf('Engineering features...\n');
 
 % Moving Average (Smoothing noise)
 % Window size 5 samples
-data.pm25_avg = movmean(data.pm25, 5);
-data.pm10_avg = movmean(data.pm10, 5);
+data.pm25_avg = movmean(data.PM25, 5);
+data.pm10_avg = movmean(data.PM10, 5);
 
 % Rate of Change (Velocity of pollution increase)
 % Pad with 0 to maintain table size
-data.pm25_diff = [0; diff(data.pm25)];
-data.pm10_diff = [0; diff(data.pm10)];
+data.pm25_diff = [0; diff(data.PM25)];
+data.pm10_diff = [0; diff(data.PM10)];
 
 % Ratio (Intelligence: High ratio indicates combustion/smoke, Low indicates dust)
-data.ratio = data.pm25 ./ max(data.pm10, 0.1); % Prevent division by zero
+data.ratio = data.PM25 ./ max(data.PM10, 0.1); % Prevent division by zero
 
 % 3. Detect Spikes (Dynamic Intelligence)
 % Define a threshold for sudden pollution increases
@@ -57,12 +57,12 @@ figure('Name', 'Feature Engineering & Spike Detection', 'Color', 'w', 'Position'
 
 % Subplot 1: Raw Data vs Moving Average
 subplot(3,1,1);
-plot(data.pm25, 'Color', [0.7 0.7 0.7], 'DisplayName', 'Raw PM2.5'); hold on;
+plot(data.PM25, 'Color', [0.7 0.7 0.7], 'DisplayName', 'Raw PM2.5'); hold on;
 plot(data.pm25_avg, 'b', 'LineWidth', 1.5, 'DisplayName', '5-Sample Moving Avg');
 % Highlight spikes
 spikeIdx = find(data.spike);
 if ~isempty(spikeIdx)
-    scatter(spikeIdx, data.pm25(spikeIdx), 50, 'r', 'filled', 'DisplayName', 'Detected Spikes');
+    scatter(spikeIdx, data.PM25(spikeIdx), 50, 'r', 'filled', 'DisplayName', 'Detected Spikes');
 end
 title('PM2.5: Raw vs Smoothed with Spike Detection');
 ylabel('\mu g / m^3');

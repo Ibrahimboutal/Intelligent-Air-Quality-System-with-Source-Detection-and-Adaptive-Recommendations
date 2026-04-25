@@ -2,47 +2,68 @@
 % Master's Level Enhancement - Phase 1: Statistical Validation
 % This script loads historical logs, performs a chronological 80/20 split,
 % and evaluates the Random Forest model using Precision, Recall, and F1-Score.
-
 clear; close all; clc;
 
 % --- 1. Load Data ---
-logDir = 'logs';
+logDir = '../logs';
 logFiles = dir(fullfile(logDir, '*.csv'));
-
 if isempty(logFiles)
     error('No log files found in %s. Run a monitoring session first.', logDir);
 end
 
-fprintf('Loading data from %d log files...\n', length(logFiles));
+fprintf('Scanning %d log files...\n', length(logFiles));
 allData = table();
+
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    allData = [allData; T];
+    varNames = T.Properties.VariableNames;
+    
+    % Check if this file has 'Source' and at least one 'Features_7D' column
+    hasSource = ismember('Source', varNames);
+    hasFeatures = any(startsWith(varNames, 'Features_7D'));
+    
+    if ~(hasSource && hasFeatures)
+        fprintf(' -> Skipping %s (missing ML columns)\n', logFiles(i).name);
+        continue; 
+    end
+    
+    if isempty(allData)
+        allData = T;
+    else
+        allData = [allData; T];
+    end
 end
+
+if isempty(allData)
+    error('No valid log files found. Please run the Dashboard to generate new data.');
+end
+
+fprintf('Successfully loaded valid training data.\n');
 
 % --- 2. Preprocess Data ---
-% Remove rows with missing labels or features
-validIdx = ~isnan(allData.PM25) & ~strcmp(allData.Source, "");
+% Remove rows with missing labels
+validIdx = ~isnan(allData.PM25) & ~strcmp(string(allData.Source), "");
 data = allData(validIdx, :);
 
-X = data.Features_7D;
+% Dynamically extract all columns that belong to the Feature vector
+featureCols = data.Properties.VariableNames(startsWith(data.Properties.VariableNames, 'Features_7D'));
+
+% Reconstruct the X matrix (N samples x Features)
+X = data{:, featureCols}; 
 y = categorical(data.Source);
 
-% Handle variable naming if Features_7D is a multi-column matrix in the table
-if size(X, 2) == 1 && iscell(X)
-    % Sometimes writetable/readtable flattens or cell-wraps arrays
-    % This is a safeguard
-    X = cell2mat(data.Features_7D);
-end
-
-fprintf('Total samples collected: %d\n', size(X, 1));
+fprintf('Total samples ready for training: %d\n', size(X, 1));
 fprintf('Unique Classes: %s\n', strjoin(string(categories(y)), ', '));
+
+% Failsafe: Ensure we have enough classes to train a classifier
+if length(categories(y)) < 2
+    error('Machine Learning models require at least 2 distinct classes. Current data only contains "%s". Please generate more varied telemetry data.', string(categories(y)));
+end
 
 % --- 3. Chronological 80/20 Split ---
 % For time-series, we don't shuffle! We take the first 80% for training
 % and the last 20% for testing to avoid "future leakage".
 splitIdx = floor(0.8 * size(X, 1));
-
 X_train = X(1:splitIdx, :);
 y_train = y(1:splitIdx);
 X_test  = X(splitIdx+1:end, :);
@@ -69,7 +90,6 @@ cm.FontSize = 12;
 stats = confusionmat(y_test, y_pred);
 classes = categories(y_test);
 numClasses = length(classes);
-
 precision = zeros(numClasses, 1);
 recall = zeros(numClasses, 1);
 f1Score = zeros(numClasses, 1);
@@ -93,7 +113,6 @@ for i = 1:numClasses
     
     fprintf('%-25s | %-10.3f | %-10.3f | %-10.3f\n', classes{i}, precision(i), recall(i), f1Score(i));
 end
-
 fprintf('%s\n', repmat('-', 1, 65));
 fprintf('%-25s | %-10.3f | %-10.3f | %-10.3f\n', 'AVERAGE (Macro)', mean(precision), mean(recall), mean(f1Score));
 
@@ -106,6 +125,5 @@ if ~exist('models', 'dir'), mkdir('models'); end
 FeatureMu = mean(X_train);
 FeatureSigma = std(X_train);
 MLModel = B;
-
 save(modelPath, 'MLModel', 'FeatureMu', 'FeatureSigma');
 fprintf('\nModel saved to %s for real-time deployment.\n', modelPath);

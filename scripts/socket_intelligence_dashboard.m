@@ -1,8 +1,6 @@
-%% High-Performance Socket Intelligence Dashboard
+%% High-Performance Socket Intelligence Dashboard (PM2.5 & PM10)
 % This script implements a TCP Server to receive real-time telemetry
-% from the Raspberry Pi. It eliminates the 5-second polling delay
-% and disk I/O overhead of the previous CSV-based integration.
-
+% from the Raspberry Pi. Optimized for Zero-Latency rendering.
 clear; clc; close all;
 
 % Load Configuration from .env
@@ -12,7 +10,6 @@ loadEnv('../.env');
 % Configuration
 port = str2double(getenv('MATLAB_PORT'));
 if isnan(port), port = 5005; end
-
 piIP = getenv('PI_IP');
 if isempty(piIP), piIP = '127.0.0.1'; end
 
@@ -24,18 +21,17 @@ fig = figure('Name', 'ZERO-LATENCY Adaptive Intelligence Dashboard', ...
              'Color', 'w', 'Position', [50, 50, 1100, 800]);
 
 % Status Annotation Panel
-annotationPanel = annotation('textbox', [0.1, 0.85, 0.8, 0.1], ...
+annotationPanel = annotation('textbox', [0.1, 0.92, 0.8, 0.08], ...
     'String', 'Initializing Telemetry...', 'FitBoxToText', 'on', ...
     'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold');
 
-% Create TCP Server (Enhancement: Add Timeout to prevent readline deadlock)
+% Create TCP Server 
 server = tcpserver("0.0.0.0", port, "Timeout", 1);
 
-% Initialize Data Science state (AirQualitySystem object)
-% Note: We use the AirQualitySystem class to reuse the intelligence logic
+% Initialize Data Science state
 aqSystem = AirQualitySystem(piIP, getenv('PI_USER'), getenv('PI_PASS'), getenv('SERIAL_PORT'), str2double(getenv('BAUD_RATE')), true);
 aqSystem.setupDashboard();
-delete(aqSystem.FigureHandle); % Close the internal dashboard, we'll use this script's plots
+delete(aqSystem.FigureHandle); % Close the internal dashboard
 
 % Buffers for visualization
 timeWindow = 300; % Show last 300 samples
@@ -43,6 +39,23 @@ pm25_buffer = NaN(1, timeWindow);
 pm10_buffer = NaN(1, timeWindow);
 source_buffer = strings(1, timeWindow);
 count = 0;
+
+% --- PRE-ALLOCATE GRAPHICS FOR MAXIMUM PERFORMANCE ---
+subplot(2,1,1);
+hLine25 = plot(NaN(1, timeWindow), 'b', 'LineWidth', 1.5); hold on;
+hLine10 = plot(NaN(1, timeWindow), 'Color', [0 0.5 0], 'LineWidth', 1.5); % Dark Green for PM10
+hForecast = plot(timeWindow + 1, NaN, 'ro', 'MarkerFaceColor', 'r');
+title('Zero-Latency Telemetry with Dampened Forecast');
+ylabel('\mu g / m^3'); grid on;
+legend('PM2.5', 'PM10', 'PM2.5 Forecast', 'Location', 'northwest');
+hold off;
+
+subplot(2,1,2);
+% Pre-allocate a standard scatter plot to avoid gscatter recreation overhead
+hScatter = scatter(1:timeWindow, NaN(1, timeWindow), 36, [0 0 1], 'filled');
+title('Real-Time Dynamic Source Classification (PM2.5 Tracker)');
+ylabel('\mu g / m^3'); xlabel('Samples (Sliding Window)');
+grid on;
 
 % Main loop
 while ishghandle(fig)
@@ -59,7 +72,6 @@ while ishghandle(fig)
             timestamp = payload.timestamp;
             
             % 2. Push to Intelligence Engine
-            % We simulate the real-time update in aqSystem buffers
             aqSystem.PM25Data(count) = pm25;
             aqSystem.PM10Data(count) = pm10;
             aqSystem.TimeArray(count) = count;
@@ -85,24 +97,18 @@ while ishghandle(fig)
                 panelColor = [0.8 1 0.8];
             end
             
-            statusStr = sprintf('TELEMETRY ACTIVE | %s\nPM2.5: %.1f | Source: %s\nRecommendation: %s', ...
-                timestamp, pm25, source, advice);
+            % Added PM10 to the text readout
+            statusStr = sprintf('TELEMETRY ACTIVE | %s\nPM2.5: %.1f  |  PM10: %.1f  |  Source: %s\nRecommendation: %s', ...
+                timestamp, pm25, pm10, source, advice);
             set(annotationPanel, 'String', statusStr, 'BackgroundColor', panelColor);
             
-            % Plotting
-            subplot(2,1,1);
-            plot(pm25_buffer, 'b', 'LineWidth', 1.5); hold on;
-            plot(timeWindow + 1, predictedPM25, 'ro', 'MarkerFaceColor', 'r');
-            title('Zero-Latency PM2.5 Telemetry with Dampened Forecast');
-            ylabel('\mu g / m^3'); grid on; hold off;
+            % Fast Graphic Updates (Updating YData directly)
+            set(hLine25, 'YData', pm25_buffer);
+            set(hLine10, 'YData', pm10_buffer);
+            set(hForecast, 'YData', predictedPM25);
             
-            subplot(2,1,2);
-            % Use categorical for gscatter
-            cats = categorical(source_buffer);
-            gscatter(1:timeWindow, pm25_buffer, cats, 'brgm', 'o+x*');
-            title('Real-Time Dynamic Source Classification');
-            ylabel('\mu g / m^3'); xlabel('Samples (Sliding Window)');
-            grid on;
+            % Update Scatter YData
+            set(hScatter, 'YData', pm25_buffer);
             
             drawnow limitrate;
             
