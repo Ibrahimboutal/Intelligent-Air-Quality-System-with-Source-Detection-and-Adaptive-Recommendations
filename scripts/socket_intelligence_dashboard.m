@@ -1,6 +1,7 @@
-%% High-Performance Socket Intelligence Dashboard (PM2.5 & PM10)
+%% High-Performance Socket Intelligence Dashboard (PM2.5, PM10 & Logging)
 % This script implements a TCP Server to receive real-time telemetry
-% from the Raspberry Pi. Optimized for Zero-Latency rendering.
+% from the Raspberry Pi. Optimized for Zero-Latency rendering and
+% memory-safe RAM batch logging.
 clear; clc; close all;
 
 % Load Configuration from .env
@@ -40,6 +41,14 @@ pm10_buffer = NaN(1, timeWindow);
 source_buffer = strings(1, timeWindow);
 count = 0;
 
+% --- 1. PRE-ALLOCATE SESSION LOGS (RAM ONLY) ---
+maxExpectedSamples = 100000; % Adjust based on expected session length
+log_timestamps = strings(maxExpectedSamples, 1);
+log_pm25 = NaN(maxExpectedSamples, 1);
+log_pm10 = NaN(maxExpectedSamples, 1);
+log_source = strings(maxExpectedSamples, 1);
+log_features = cell(maxExpectedSamples, 1); 
+
 % --- PRE-ALLOCATE GRAPHICS FOR MAXIMUM PERFORMANCE ---
 subplot(2,1,1);
 hLine25 = plot(NaN(1, timeWindow), 'b', 'LineWidth', 1.5); hold on;
@@ -47,7 +56,7 @@ hLine10 = plot(NaN(1, timeWindow), 'Color', [0 0.5 0], 'LineWidth', 1.5); % Dark
 hForecast = plot(timeWindow + 1, NaN, 'ro', 'MarkerFaceColor', 'r');
 title('Zero-Latency Telemetry with Dampened Forecast');
 ylabel('\mu g / m^3'); grid on;
-legend('PM2.5', 'PM10', 'PM2.5 Forecast', 'Location', 'northwest');
+legend([hLine25, hLine10, hForecast], {'PM2.5', 'PM10', 'PM2.5 Forecast'}, 'Location', 'northwest');
 hold off;
 
 subplot(2,1,2);
@@ -62,7 +71,7 @@ while ishghandle(fig)
     % Check for new data
     if server.Connected && server.NumBytesAvailable > 0
         try
-            % 1. Receive JSON packet
+            % Receive JSON packet
             raw_data = readline(server);
             payload = jsondecode(raw_data);
             
@@ -71,7 +80,7 @@ while ishghandle(fig)
             pm10 = payload.pm10;
             timestamp = payload.timestamp;
             
-            % 2. Push to Intelligence Engine
+            % Push to Intelligence Engine
             aqSystem.PM25Data(count) = pm25;
             aqSystem.PM10Data(count) = pm10;
             aqSystem.TimeArray(count) = count;
@@ -81,13 +90,19 @@ while ishghandle(fig)
             predictedPM25 = aqSystem.forecastAQI(count);
             [source, advice] = aqSystem.analyze(count, features, predictedPM25);
             
-            % 3. Update Visual Buffers
+            % --- 2. LOG DATA TO RAM ---
+            log_timestamps(count) = string(timestamp);
+            log_pm25(count) = pm25;
+            log_pm10(count) = pm10;
+            log_source(count) = string(source);
+            log_features{count} = features;
+            
+            % Update Visual Buffers
             pm25_buffer = [pm25_buffer(2:end), pm25];
             pm10_buffer = [pm10_buffer(2:end), pm10];
             source_buffer = [source_buffer(2:end), string(source)];
             
-            % --- 4. UPDATE DASHBOARD ---
-            
+            % --- UPDATE DASHBOARD ---
             % Set color based on status
             if contains(advice, 'DANGER')
                 panelColor = [1 0.7 0.7];
@@ -106,8 +121,6 @@ while ishghandle(fig)
             set(hLine25, 'YData', pm25_buffer);
             set(hLine10, 'YData', pm10_buffer);
             set(hForecast, 'YData', predictedPM25);
-            
-            % Update Scatter YData
             set(hScatter, 'YData', pm25_buffer);
             
             drawnow limitrate;
@@ -124,17 +137,14 @@ end
 clear server;
 fprintf('Server stopped.\n');
 
-% --- BATCH SAVE TO CSV UPON EXIT ---
+% --- 3. BATCH SAVE TO CSV UPON EXIT ---
 fprintf('Compiling session data...\n');
 
-% Trim unused pre-allocated rows to match the actual number of received packets
-validRows = 1:count;
-
-% NOTE: You'll need to make sure you added the pre-allocated log_timestamps, 
-% log_pm25, etc., variables before the while loop, and updated them inside the loop!
-if exist('log_timestamps', 'var')
-    SessionData = table(log_timestamps(validRows)', log_pm25(validRows)', ...
-                        log_pm10(validRows)', log_source(validRows)', log_features(validRows)', ...
+if count > 0
+    % Trim unused pre-allocated rows to match the actual number of received packets
+    validRows = 1:count;
+    SessionData = table(log_timestamps(validRows), log_pm25(validRows), ...
+                        log_pm10(validRows), log_source(validRows), log_features(validRows), ...
                         'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'Features_7D'});
 
     if ~exist('../logs', 'dir'), mkdir('../logs'); end
@@ -142,24 +152,5 @@ if exist('log_timestamps', 'var')
     writetable(SessionData, filename);
     fprintf('Session successfully saved to %s\n', filename);
 else
-    fprintf('Warning: RAM logging variables not found. Data not saved.\n');
-end% --- BATCH SAVE TO CSV UPON EXIT ---
-fprintf('Compiling session data...\n');
-
-% Trim unused pre-allocated rows to match the actual number of received packets
-validRows = 1:count;
-
-% NOTE: You'll need to make sure you added the pre-allocated log_timestamps, 
-% log_pm25, etc., variables before the while loop, and updated them inside the loop!
-if exist('log_timestamps', 'var')
-    SessionData = table(log_timestamps(validRows)', log_pm25(validRows)', ...
-                        log_pm10(validRows)', log_source(validRows)', log_features(validRows)', ...
-                        'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'Features_7D'});
-
-    if ~exist('../logs', 'dir'), mkdir('../logs'); end
-    filename = sprintf('../logs/telemetry_session_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
-    writetable(SessionData, filename);
-    fprintf('Session successfully saved to %s\n', filename);
-else
-    fprintf('Warning: RAM logging variables not found. Data not saved.\n');
+    fprintf('No data collected during this session.\n');
 end
