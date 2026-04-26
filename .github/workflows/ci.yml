@@ -47,6 +47,7 @@ jobs:
           Statistics_and_Machine_Learning_Toolbox
           Signal_Processing_Toolbox
           Econometrics_Toolbox
+          Instrument_Control_Toolbox
       
     - name: Run MATLAB Unit Tests with Coverage
       uses: matlab-actions/run-tests@v2
