@@ -27,6 +27,7 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
     methods(TestMethodSetup)
         function setupData(testCase)
             testCase.RootDir = fullfile(fileparts(mfilename('fullpath')), '..');
+            if isempty(getenv('MATLAB_PORT')), setenv('MATLAB_PORT', '5056'); end
 
             % Put all src + scripts + tests on the path BEFORE cd so timer
             % callbacks (sendMockTCPPacket) can resolve functions from scripts/
