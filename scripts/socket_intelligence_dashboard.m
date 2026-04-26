@@ -26,8 +26,16 @@ annotationPanel = annotation('textbox', [0.1, 0.92, 0.8, 0.08], ...
     'String', 'Initializing Telemetry...', 'FitBoxToText', 'on', ...
     'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold');
 
-% Create TCP Server 
-server = tcpserver("0.0.0.0", port, "Timeout", 1);
+% Create TCP Server (with backward compatibility)
+useLegacy = isempty(which('tcpserver'));
+if ~useLegacy
+    server = tcpserver("0.0.0.0", port, "Timeout", 1);
+else
+    % Legacy fallback for older MATLAB versions in CI
+    server = tcpip('0.0.0.0', port, 'NetworkRole', 'server', 'Timeout', 1);
+    set(server, 'InputBufferSize', 10000);
+    fopen(server);
+end
 
 % Initialize Data Science state
 aqSystem = AirQualitySystem(piIP, getenv('PI_USER'), getenv('PI_PASS'), getenv('SERIAL_PORT'), str2double(getenv('BAUD_RATE')), true);
@@ -43,11 +51,11 @@ count = 0;
 
 % --- 1. PRE-ALLOCATE SESSION LOGS (RAM ONLY) ---
 maxExpectedSamples = 100000; % Adjust based on expected session length
-log_timestamps = strings(maxExpectedSamples, 1);
-log_pm25 = NaN(maxExpectedSamples, 1);
-log_pm10 = NaN(maxExpectedSamples, 1);
-log_source = strings(maxExpectedSamples, 1);
-log_features = cell(maxExpectedSamples, 1); 
+session_PM25 = NaN(maxExpectedSamples, 1);
+session_PM10 = NaN(maxExpectedSamples, 1);
+session_Source = strings(maxExpectedSamples, 1);
+session_Novelty = NaN(maxExpectedSamples, 1);
+session_Timestamps = strings(maxExpectedSamples, 1);
 
 % --- PRE-ALLOCATE GRAPHICS FOR MAXIMUM PERFORMANCE ---
 subplot(2,1,1);
@@ -69,18 +77,44 @@ grid on;
 % Main loop
 while ishghandle(fig)
     % Check for new data
-    if server.Connected && server.NumBytesAvailable > 0
+    numBytes = 0;
+    connected = false;
+    if ~useLegacy
+        numBytes = server.NumBytesAvailable;
+        connected = server.Connected;
+    else
+        numBytes = server.BytesAvailable;
+        connected = strcmp(server.Status, 'open');
+    end
+
+    if connected && numBytes > 0
         % Security Check: Restrict to expected subnet / Pi IP
-        if ~isempty(piIP) && ~strcmp(server.ClientAddress, piIP) && ~strcmp(server.ClientAddress, '127.0.0.1')
-            fprintf('SECURITY WARNING: Unauthorized connection attempt from %s. Ignoring.\n', server.ClientAddress);
-            read(server, server.NumBytesAvailable, "uint8"); % Discard unauthorized data
+        clientAddress = '';
+        if ~useLegacy
+            clientAddress = server.ClientAddress;
+        else
+            % For legacy tcpip, we skip address validation in this simplified fallback
+            clientAddress = '127.0.0.1'; 
+        end
+
+        if ~isempty(piIP) && ~strcmp(clientAddress, piIP) && ~strcmp(clientAddress, '127.0.0.1')
+            fprintf('SECURITY WARNING: Unauthorized connection attempt from %s. Ignoring.\n', clientAddress);
+            if ~useLegacy
+                read(server, server.NumBytesAvailable, "uint8"); 
+            else
+                fread(server, server.BytesAvailable);
+            end
             pause(0.1);
             continue;
         end
         
         try
             % Receive JSON packet
-            raw_data = readline(server);
+            if ~useLegacy
+                raw_data = readline(server);
+            else
+                raw_data = fgetl(server);
+            end
             payload = jsondecode(raw_data);
             
             count = count + 1;
@@ -93,43 +127,45 @@ while ishghandle(fig)
             aqSystem.PM10Data(count) = pm10;
             aqSystem.TimeArray(count) = count;
             
-            % Extract Features & Analyze
-            features = aqSystem.extractFeatures(count);
-            predictedPM25 = aqSystem.forecastAQI(count);
-            [source, advice] = aqSystem.analyze(count, features, predictedPM25);
+            % Process through Kalman and ML layers
+            [sourceStr, advice, noveltyScore, forecastVal] = aqSystem.processNewSample(pm25, pm10);
             
-            % --- 2. LOG DATA TO RAM ---
-            log_timestamps(count) = string(timestamp);
-            log_pm25(count) = pm25;
-            log_pm10(count) = pm10;
-            log_source(count) = string(source);
-            log_features{count} = features;
+            % Store in RAM Buffer
+            session_PM25(count) = pm25;
+            session_PM10(count) = pm10;
+            session_Source(count) = sourceStr;
+            session_Novelty(count) = noveltyScore;
+            session_Timestamps(count) = timestamp;
             
-            % Update Visual Buffers
+            % Update Sliding Buffers
             pm25_buffer = [pm25_buffer(2:end), pm25];
             pm10_buffer = [pm10_buffer(2:end), pm10];
-            source_buffer = [source_buffer(2:end), string(source)];
+            source_buffer = [source_buffer(2:end), sourceStr];
             
-            % --- UPDATE DASHBOARD ---
-            % Set color based on status
-            if contains(advice, 'DANGER')
-                panelColor = [1 0.7 0.7];
-            elseif contains(advice, 'PRE-EMPTIVE')
-                panelColor = [1 0.9 0.6];
-            else
-                panelColor = [0.8 1 0.8];
-            end
-            
-            % Added PM10 to the text readout
-            statusStr = sprintf('TELEMETRY ACTIVE | %s\nPM2.5: %.1f  |  PM10: %.1f  |  Source: %s\nRecommendation: %s', ...
-                timestamp, pm25, pm10, source, advice);
-            set(annotationPanel, 'String', statusStr, 'BackgroundColor', panelColor);
-            
-            % Fast Graphic Updates (Updating YData directly)
+            % --- ZERO-LATENCY RENDERING ---
             set(hLine25, 'YData', pm25_buffer);
             set(hLine10, 'YData', pm10_buffer);
-            set(hForecast, 'YData', predictedPM25);
+            set(hForecast, 'XData', timeWindow + 1, 'YData', forecastVal);
             set(hScatter, 'YData', pm25_buffer);
+            
+            % Map sources to colors for the scatter
+            colors = zeros(timeWindow, 3);
+            for k = 1:timeWindow
+                switch source_buffer(k)
+                    case "Traffic",    colors(k,:) = [1 0 0]; % Red
+                    case "Dust",       colors(k,:) = [0.8 0.5 0.2]; % Brown
+                    case "Combustion", colors(k,:) = [0.2 0.2 0.2]; % Gray
+                    otherwise,         colors(k,:) = [0 0.8 0]; % Green (Clean)
+                end
+            end
+            set(hScatter, 'CData', colors);
+            
+            % Update Status UI
+            statusStr = sprintf('Time: %s | PM2.5: %.1f | PM10: %.1f | Source: %s | Novelty: %.2f', ...
+                timestamp, pm25, pm10, sourceStr, noveltyScore);
+            set(annotationPanel, 'String', statusStr);
+            if noveltyScore > 0.5, set(annotationPanel, 'BackgroundColor', [1 0.8 0.8]);
+            else, set(annotationPanel, 'BackgroundColor', [0.95 0.95 0.95]); end
             
             drawnow limitrate;
             
@@ -137,28 +173,27 @@ while ishghandle(fig)
             fprintf('Processing error: %s\n', ME.message);
         end
     end
-    
-    % Small pause to prevent CPU pegging
     pause(0.01);
 end
 
-clear server;
-fprintf('Server stopped.\n');
+% --- 2. FLUSH RAM LOGS TO DISK ON EXIT ---
+fprintf('\nDashboard closed. Flushing session logs to disk...\n');
+validIdx = ~isnan(session_PM25(1:count));
+if any(validIdx)
+    finalTable = table(session_Timestamps(validIdx), session_PM25(validIdx), ...
+                       session_PM10(validIdx), session_Source(validIdx), ...
+                       session_Novelty(validIdx), ...
+                       'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'NoveltyScore'});
+    logName = sprintf('../logs/Socket_Session_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
+    writetable(finalTable, logName);
+    fprintf('Session log saved: %s\n', logName);
+end
 
-% --- 3. BATCH SAVE TO CSV UPON EXIT ---
-fprintf('Compiling session data...\n');
-
-if count > 0
-    % Trim unused pre-allocated rows to match the actual number of received packets
-    validRows = 1:count;
-    SessionData = table(log_timestamps(validRows), log_pm25(validRows), ...
-                        log_pm10(validRows), log_source(validRows), log_features(validRows), ...
-                        'VariableNames', {'Timestamp', 'PM25', 'PM10', 'Source', 'Features_7D'});
-
-    if ~exist('../logs', 'dir'), mkdir('../logs'); end
-    filename = sprintf('../logs/telemetry_session_%s.csv', datestr(now, 'yyyymmdd_HHMMSS'));
-    writetable(SessionData, filename);
-    fprintf('Session successfully saved to %s\n', filename);
-else
-    fprintf('No data collected during this session.\n');
+if exist('server', 'var')
+    if ~useLegacy
+        delete(server);
+    else
+        fclose(server);
+        delete(server);
+    end
 end

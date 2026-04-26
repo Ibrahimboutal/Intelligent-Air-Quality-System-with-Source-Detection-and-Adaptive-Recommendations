@@ -164,10 +164,6 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
         end
 
         function testSocketIntelligenceDashboard(testCase)
-            % Skip gracefully if tcpserver is not available (requires MATLAB R2021a+)
-            testCase.assumeTrue(~isempty(which('tcpserver')), ...
-                'tcpserver not available in this MATLAB version - skipping socket dashboard test');
-
             port = str2double(getenv('MATLAB_PORT'));
 
             % Timer 1: inject a JSON packet once server is up
