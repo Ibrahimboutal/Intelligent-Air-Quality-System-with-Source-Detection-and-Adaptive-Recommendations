@@ -85,8 +85,11 @@ The `scripts/air_quality_monitor.py` service runs as a `systemd` daemon. It hand
 ### 6. Predictive Intelligence & Backtesting
 `scripts/backtest_forecaster.m` evaluates the Holt-Winters forecaster at horizons of 1, 3, 5, 10, and 15 minutes — producing RMSE/MAE curves, an $\alpha$/$\beta$ sensitivity heatmap, a residual ACF white-noise test, and an actual-vs-predicted plot with uncertainty bands.
 
-### 7. Unsupervised Novelty Detection
-`src/IsolationForestAD.m` is a from-scratch MATLAB implementation of Isolation Forest (Liu et al., 2008), scoring anomalies via $s(x,n) = 2^{-E[h(x)]/c(n)}$. Trained on "Clean" baseline data, it flags unknown events in real-time with a `[NOVELTY ALERT]` console message.
+### 8. Zero-Latency Intelligence Dashboard
+The `scripts/socket_intelligence_dashboard.m` is the primary monitoring interface. It:
+*   **Decouples Acquisition from Analysis:** Receives JSON packets via TCP, allowing the Raspberry Pi to be located anywhere on the network.
+*   **Dual-View Visualization:** Real-time filtered time-series (top) and dynamic source classification (bottom).
+*   **Headless-Compatible:** Detects CI environments and runs without a GUI to satisfy automated testing requirements.
 
 ---
 
@@ -96,25 +99,24 @@ The `scripts/air_quality_monitor.py` service runs as a `systemd` daemon. It hand
 Connect your **SDS011 sensor** to the Raspberry Pi via USB.
 
 ### 2. Edge Configuration
+Configure your `.env` and start the Python daemon:
 ```bash
 sudo cp air_quality.service /etc/systemd/system/
 sudo systemctl enable air_quality.service
 sudo systemctl start air_quality.service
 ```
 
-### 3. Offline Model Training (Run Once)
+### 3. Intelligence Hub Setup (MATLAB)
 ```matlab
-% From MATLAB in the project root:
-run('scripts/evaluate_model_performance.m')  % Trains & saves RF model
-run('scripts/detect_novelty.m')              % Trains & saves Isolation Forest
+% 1. Train your room-specific models (Run Once)
+run('scripts/train_offline_model.m') 
+run('scripts/detect_novelty.m')
+
+% 2. Start the Live Intelligence Dashboard
+run('scripts/socket_intelligence_dashboard.m')
 ```
 
-### 4. Real-Time Monitoring
-```matlab
-run('main.m')  % Auto-loads both models for zero-latency startup
-```
-
-### 5. Post-Session Analysis
+### 4. Post-Session Analysis
 ```matlab
 run('scripts/compare_filter_performance.m')  % Signal denoising study
 run('scripts/explain_model.m')               % XAI analysis
