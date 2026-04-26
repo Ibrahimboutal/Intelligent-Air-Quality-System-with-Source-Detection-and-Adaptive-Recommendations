@@ -1,162 +1,218 @@
 classdef ScriptsCoverageTest < matlab.unittest.TestCase
-    % Unit tests to execute and cover standalone scripts
-    
+    % ScriptsCoverageTest
+    % Executes every standalone script in scripts/ to register code coverage.
+    %
+    % Design decisions
+    % ----------------
+    % 1. safeRun()  – scripts start with `clear`, which wipes the caller workspace.
+    %    Wrapping run() in a static helper creates a separate stack frame so that
+    %    `clear` only affects the helper's scope, leaving testCase intact.
+    %
+    % 2. cd(scriptsDir) in setup – some scripts use '../logs' (relative to scripts/)
+    %    while others use 'logs' (relative to CWD). Running from scripts/ unifies both:
+    %      '../logs'  →  <repo>/logs/       (where we put mock CSV)
+    %      'logs'     →  <repo>/scripts/logs (where we also put a copy)
+    %
+    % 3. sendMockTCPPacket.m – static method callbacks can't be resolved from a
+    %    timer's async context.  A plain function file on the path works fine.
+
     properties
-        LogDir
-        MockFilePath
+        RootDir            % absolute path to repo root
+        OrigDir            % CWD before each test (restored on teardown)
+        MockRootCSV        % <repo>/logs/AQI_Log_CoverageMock.csv
+        MockScriptsCSV     % <repo>/scripts/logs/AQI_Log_CoverageMock.csv
     end
-    
+
+    % -----------------------------------------------------------------------
     methods(TestMethodSetup)
         function setupData(testCase)
-            % Ensure paths are set
-            addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
-            addpath(fullfile(fileparts(mfilename('fullpath')), '../scripts'));
-            
-            % Setup mock log directory
-            testCase.LogDir = fullfile(fileparts(mfilename('fullpath')), '../logs');
-            if ~exist(testCase.LogDir, 'dir'), mkdir(testCase.LogDir); end
-            
-            % Generate comprehensive mock data
-            numSamples = 100;
-            Time_s = (1:numSamples)';
-            Timestamp = datestr(now - linspace(1, 0, numSamples)', 'yyyy-mm-dd HH:MM:SS');
-            Timestamp = string(Timestamp);
-            PM25 = rand(numSamples, 1) * 50 + 10;
-            PM10 = PM25 * 1.2 + rand(numSamples, 1) * 10;
-            pm25 = PM25; % Lowercase for scripts that use it
-            pm10 = PM10;
-            Features_7D = rand(numSamples, 7);
-            Forecast_PM25 = PM25 + rand(numSamples, 1)*5;
-            NoveltyScores = rand(numSamples, 1);
-            NoveltyData = false(numSamples, 1);
-            Source = repmat("Clean", numSamples, 1);
-            Source(10:20) = "Traffic";
-            Source(50:60) = "Dust";
-            Advice = repmat("OK", numSamples, 1);
-            
-            T = table(Time_s, Timestamp, PM25, PM10, pm25, pm10, Features_7D, ...
-                      Forecast_PM25, NoveltyScores, NoveltyData, Source, Advice);
-            
-            testCase.MockFilePath = fullfile(testCase.LogDir, 'AQI_Log_CoverageMock.csv');
-            writetable(T, testCase.MockFilePath);
-            
-            % Set environment variables for socket dashboard
-            setenv('MATLAB_PORT', '5055');
-            setenv('PI_IP', '127.0.0.1');
+            testCase.RootDir = fullfile(fileparts(mfilename('fullpath')), '..');
+
+            % Put all src + scripts + tests on the path so timer callbacks can
+            % resolve helper functions (e.g. sendMockTCPPacket)
+            addpath(fullfile(testCase.RootDir, 'src'));
+            addpath(fullfile(testCase.RootDir, 'scripts'));
+            addpath(fullfile(testCase.RootDir, 'tests'));
+
+            % --- create mock log files in BOTH expected locations ---
+            rootLogs    = fullfile(testCase.RootDir, 'logs');
+            scriptsLogs = fullfile(testCase.RootDir, 'scripts', 'logs');
+            if ~exist(rootLogs,    'dir'), mkdir(rootLogs);    end
+            if ~exist(scriptsLogs, 'dir'), mkdir(scriptsLogs); end
+
+            T = ScriptsCoverageTest.buildMockTable(120);
+
+            testCase.MockRootCSV    = fullfile(rootLogs,    'AQI_Log_CoverageMock.csv');
+            testCase.MockScriptsCSV = fullfile(scriptsLogs, 'AQI_Log_CoverageMock.csv');
+            writetable(T, testCase.MockRootCSV);
+            writetable(T, testCase.MockScriptsCSV);
+
+            % --- ensure models/ dirs exist (some scripts save there) ---
+            rootModels    = fullfile(testCase.RootDir, 'models');
+            scriptsModels = fullfile(testCase.RootDir, 'scripts', 'models');
+            if ~exist(rootModels,    'dir'), mkdir(rootModels);    end
+            if ~exist(scriptsModels, 'dir'), mkdir(scriptsModels); end
+
+            % Seed a dummy trainedModel so AirQualitySystem constructor won't warn
+            for mpath = {fullfile(rootModels,'trainedModel.mat'), ...
+                         fullfile(scriptsModels,'trainedModel.mat')}
+                if ~exist(mpath{1}, 'file')
+                    MLModel = 1; FeatureMu = zeros(1,7); FeatureSigma = ones(1,7); %#ok<NASGU>
+                    save(mpath{1}, 'MLModel', 'FeatureMu', 'FeatureSigma');
+                end
+            end
+
+            % Env vars required by socket_intelligence_dashboard
+            setenv('MATLAB_PORT', '5056');
+            setenv('PI_IP',       '127.0.0.1');
+            setenv('PI_USER',     'testuser');
+            setenv('PI_PASS',     'testpass');
+            setenv('SERIAL_PORT', '/dev/ttyUSB0');
+            setenv('BAUD_RATE',   '9600');
+
+            % Change to scripts/ so relative paths resolve correctly, then
+            % save original dir for teardown
+            testCase.OrigDir = cd(fullfile(testCase.RootDir, 'scripts'));
         end
     end
-    
+
+    % -----------------------------------------------------------------------
     methods(TestMethodTeardown)
         function teardownData(testCase)
-            % Clean up mock file
-            if exist(testCase.MockFilePath, 'file')
-                delete(testCase.MockFilePath);
-            end
-            % Close any left open figures
+            cd(testCase.OrigDir);
+            if exist(testCase.MockRootCSV,    'file'), delete(testCase.MockRootCSV);    end
+            if exist(testCase.MockScriptsCSV, 'file'), delete(testCase.MockScriptsCSV); end
             close all force;
         end
     end
-    
+
+    % -----------------------------------------------------------------------
     methods(Test)
+
         function testAdaptiveIntelligenceSystem(testCase)
-            run('adaptive_intelligence_system.m');
+            ScriptsCoverageTest.safeRun('adaptive_intelligence_system.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testBacktestForecaster(testCase)
-            run('backtest_forecaster.m');
+            ScriptsCoverageTest.safeRun('backtest_forecaster.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testCompareFilterPerformance(testCase)
-            run('compare_filter_performance.m');
+            ScriptsCoverageTest.safeRun('compare_filter_performance.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testCrossValidateSystem(testCase)
-            run('cross_validate_system.m');
+            ScriptsCoverageTest.safeRun('cross_validate_system.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testDetectNovelty(testCase)
-            run('detect_novelty.m');
+            ScriptsCoverageTest.safeRun('detect_novelty.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testEvaluateModelPerformance(testCase)
-            run('evaluate_model_performance.m');
+            ScriptsCoverageTest.safeRun('evaluate_model_performance.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testExplainModel(testCase)
-            run('explain_model.m');
+            ScriptsCoverageTest.safeRun('explain_model.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testFeatureEngineering(testCase)
-            run('feature_engineering.m');
+            ScriptsCoverageTest.safeRun('feature_engineering.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testSourceDetectionML(testCase)
-            run('source_detection_ml.m');
+            ScriptsCoverageTest.safeRun('source_detection_ml.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testTrainFromRawLogs(testCase)
-            run('train_from_raw_logs.m');
+            ScriptsCoverageTest.safeRun('train_from_raw_logs.m');
             testCase.verifyTrue(true);
         end
-        
+
         function testLiveIntelligenceDashboard(testCase)
-            % The script uses an infinite loop "while ishghandle(fig)".
-            % We spawn a timer to close the figure after 1 second.
+            % Close all figures after 1.5 s to break the while-ishghandle loop
             t = timer('ExecutionMode', 'singleShot', 'StartDelay', 1.5, ...
-                      'TimerFcn', @(~,~) close('all', 'force'));
+                      'TimerFcn', @(~,~) close('all','force'));
             start(t);
-            
-            % We also need to set pollInterval to a small value so it doesn't pause for 5s
-            % The script has `pollInterval = 5;`. 
-            % Since it's a script, we can't inject variables before it runs unless we overwrite it.
-            % However, the timer will fire during the pause(5).
-            run('live_intelligence_dashboard.m');
-            
-            if isvalid(t), delete(t); end
+            ScriptsCoverageTest.safeRun('live_intelligence_dashboard.m');
+            if isvalid(t), stop(t); delete(t); end
             testCase.verifyTrue(true);
         end
-        
+
         function testSocketIntelligenceDashboard(testCase)
-            % The script uses an infinite loop "while ishghandle(fig)".
-            t = timer('ExecutionMode', 'singleShot', 'StartDelay', 2.0, ...
-                      'TimerFcn', @(~,~) close('all', 'force'));
-            start(t);
-            
-            % Optional: We could spawn a background client to connect and send data
-            client_t = timer('ExecutionMode', 'singleShot', 'StartDelay', 0.5, ...
-                             'TimerFcn', @(~,~) ScriptsCoverageTest.sendMockPacket('127.0.0.1', 5055));
-            start(client_t);
-            
-            run('socket_intelligence_dashboard.m');
-            
-            if isvalid(t), delete(t); end
-            if isvalid(client_t), delete(client_t); end
+            port = str2double(getenv('MATLAB_PORT'));
+
+            % Timer 1: inject a JSON packet once server is up
+            inject_t = timer('ExecutionMode', 'singleShot', 'StartDelay', 0.8, ...
+                             'TimerFcn', @(~,~) sendMockTCPPacket('127.0.0.1', port));
+
+            % Timer 2: close the figure to exit the while loop
+            close_t  = timer('ExecutionMode', 'singleShot', 'StartDelay', 2.5, ...
+                             'TimerFcn', @(~,~) close('all','force'));
+
+            start(inject_t);
+            start(close_t);
+
+            ScriptsCoverageTest.safeRun('socket_intelligence_dashboard.m');
+
+            for t = [inject_t, close_t]
+                if isvalid(t), stop(t); delete(t); end
+            end
             testCase.verifyTrue(true);
         end
+
     end
-    
+
+    % -----------------------------------------------------------------------
     methods(Static)
-        function sendMockPacket(ip, port)
-            try
-                client = tcpclient(ip, port, "Timeout", 1);
-                packet = struct('timestamp', datestr(now, 'yyyy-mm-dd HH:MM:SS'), ...
-                                'pm25', 25.5, ...
-                                'pm10', 30.2);
-                write(client, uint8([jsonencode(packet), newline]));
-                pause(0.1);
-                clear client;
-            catch
-                % Ignore connection errors in test background thread
-            end
+
+        function safeRun(scriptName)
+            % Run script in its own stack-frame so that the script's `clear`
+            % command does not wipe the calling test-method's `testCase` variable.
+            run(scriptName);
         end
+
+        function T = buildMockTable(n)
+            % Build a mock AQI_Log CSV with all columns used by every script.
+            rng(0);
+            Time_s        = (1:n)';
+            Timestamp     = string(datestr(now - linspace(1,0,n)', 'yyyy-mm-dd HH:MM:SS'));
+            PM25          = max(5, 20 + 15*sin(linspace(0,4*pi,n)') + 3*randn(n,1));
+            PM10          = PM25 .* 1.3 + 5*randn(n,1);
+            PM25Filtered  = PM25 + 0.5*randn(n,1);
+            PM10Filtered  = PM10 + 0.5*randn(n,1);
+            pm25          = PM25;   % lower-case aliases for older scripts
+            pm10          = PM10;
+            Features_7D   = rand(n, 7);
+            Forecast_PM25 = PM25 + randn(n,1)*2;
+            NoveltyScores = rand(n,1) * 0.5;
+            NoveltyData   = false(n,1);
+
+            % Labels: mostly Clean, with two pollution windows
+            Source = repmat("Clean", n, 1);
+            Source(20:30)  = "Traffic";
+            Source(55:70)  = "Dust";
+            Source(85:95)  = "Combustion (cooking / smoke)";
+
+            Advice = repmat("Air is clean", n, 1);
+            Advice(20:30)  = "Moderate - consider ventilation";
+            Advice(55:70)  = "PRE-EMPTIVE WARNING: Forecasted Spike - Close Windows Now";
+            Advice(85:95)  = "Unhealthy - open window / reduce activity";
+
+            T = table(Time_s, Timestamp, PM25, PM10, PM25Filtered, PM10Filtered, ...
+                      pm25, pm10, Features_7D, Forecast_PM25, ...
+                      NoveltyScores, NoveltyData, Source, Advice);
+        end
+
     end
 end
