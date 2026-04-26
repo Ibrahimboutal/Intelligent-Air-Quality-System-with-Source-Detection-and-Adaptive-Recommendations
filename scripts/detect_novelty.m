@@ -34,6 +34,12 @@ end
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
+    % Reconstruct Features_7D matrix from CSV-split columns (writetable splits matrix cols)
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    if ~isempty(featCols)
+        T.Features_7D = T{:, featCols};
+        T = removevars(T, featCols);
+    end
     if ismember('Features_7D', T.Properties.VariableNames)
         allData = [allData; T];
     end

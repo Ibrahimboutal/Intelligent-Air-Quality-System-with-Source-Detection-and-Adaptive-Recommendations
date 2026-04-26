@@ -15,7 +15,14 @@ end
 
 allData = table();
 for i = 1:length(logFiles)
-    allData = [allData; readtable(fullfile(logDir, logFiles(i).name))];
+    T = readtable(fullfile(logDir, logFiles(i).name));
+    % Reconstruct Features_7D matrix from CSV-split columns
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    if ~isempty(featCols)
+        T.Features_7D = T{:, featCols};
+        T = removevars(T, featCols);
+    end
+    allData = [allData; T];
 end
 
 validIdx = ~isnan(allData.PM25) & ~strcmp(allData.Source, "");

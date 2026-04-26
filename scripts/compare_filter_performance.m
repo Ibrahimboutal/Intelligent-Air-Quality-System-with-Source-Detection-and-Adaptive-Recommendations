@@ -28,7 +28,12 @@ fprintf('Loading log data...\n');
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    % Only use files that have the full feature matrix (from AirQualitySystem output)
+    % Reconstruct Features_7D matrix from CSV-split columns
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    if ~isempty(featCols)
+        T.Features_7D = T{:, featCols};
+        T = removevars(T, featCols);
+    end
     if ismember('PM25', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames)
         allData = [allData; T];
     end

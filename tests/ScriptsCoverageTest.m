@@ -28,8 +28,8 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
         function setupData(testCase)
             testCase.RootDir = fullfile(fileparts(mfilename('fullpath')), '..');
 
-            % Put all src + scripts + tests on the path so timer callbacks can
-            % resolve helper functions (e.g. sendMockTCPPacket)
+            % Put all src + scripts + tests on the path BEFORE cd so timer
+            % callbacks (sendMockTCPPacket) can resolve functions from scripts/
             addpath(fullfile(testCase.RootDir, 'src'));
             addpath(fullfile(testCase.RootDir, 'scripts'));
             addpath(fullfile(testCase.RootDir, 'tests'));
@@ -188,7 +188,10 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             Time_s        = (1:n)';
             Timestamp     = string(datestr(now - linspace(1,0,n)', 'yyyy-mm-dd HH:MM:SS'));
             PM25          = max(5, 20 + 15*sin(linspace(0,4*pi,n)') + 3*randn(n,1));
-            PM10          = PM25 .* 1.3 + 5*randn(n,1);
+            % Inject high-PM2.5 spikes so source_detection_ml gets multiple classes
+            PM25(30:40)   = 60;
+            PM25(70:80)   = 55;
+            PM10          = PM25 .* 1.3 + 5*abs(randn(n,1)) + 10;
             PM25Filtered  = PM25 + 0.5*randn(n,1);
             PM10Filtered  = PM10 + 0.5*randn(n,1);
             pm25          = PM25;   % lower-case aliases for older scripts
@@ -198,7 +201,7 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             NoveltyScores = rand(n,1) * 0.5;
             NoveltyData   = false(n,1);
 
-            % Labels: mostly Clean, with two pollution windows
+            % Labels: mostly Clean, with several pollution windows
             Source = repmat("Clean", n, 1);
             Source(20:30)  = "Traffic";
             Source(55:70)  = "Dust";

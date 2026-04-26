@@ -6,9 +6,16 @@ logFiles = dir(fullfile(logDir, '*.csv'));
 rawTbl = table();
 for i = 1:length(logFiles)
     tempTbl = readtable(fullfile(logDir, logFiles(i).name));
-    % Standardize column names to match expected format
-    tempTbl.Properties.VariableNames(1:3) = {'Timestamp', 'PM25', 'PM10'};
-    rawTbl = [rawTbl; tempTbl];
+    % Standardize column names only when the table uses raw Python log format
+    % (3-column: Timestamp, PM25, PM10) to avoid corrupting richer log files
+    if ~ismember('PM25', tempTbl.Properties.VariableNames) && width(tempTbl) >= 3
+        tempTbl.Properties.VariableNames(1:3) = {'Timestamp', 'PM25', 'PM10'};
+    end
+    % Keep only the essential columns for raw-log training
+    keepCols = intersect({'Timestamp','PM25','PM10'}, tempTbl.Properties.VariableNames, 'stable');
+    if numel(keepCols) == 3
+        rawTbl = [rawTbl; tempTbl(:, keepCols)];
+    end
 end
 N = height(rawTbl);
 fprintf('Successfully loaded %d raw samples from %d log files.\n', N, length(logFiles));
