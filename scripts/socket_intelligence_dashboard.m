@@ -70,6 +70,14 @@ grid on;
 while ishghandle(fig)
     % Check for new data
     if server.Connected && server.NumBytesAvailable > 0
+        % Security Check: Restrict to expected subnet / Pi IP
+        if ~isempty(piIP) && ~strcmp(server.ClientAddress, piIP) && ~strcmp(server.ClientAddress, '127.0.0.1')
+            fprintf('SECURITY WARNING: Unauthorized connection attempt from %s. Ignoring.\n', server.ClientAddress);
+            read(server, server.NumBytesAvailable, "uint8"); % Discard unauthorized data
+            pause(0.1);
+            continue;
+        end
+        
         try
             % Receive JSON packet
             raw_data = readline(server);

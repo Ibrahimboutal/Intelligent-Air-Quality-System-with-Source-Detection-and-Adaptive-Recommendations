@@ -7,6 +7,8 @@ import logging
 import sqlite3
 import socket
 import json
+import signal
+import sys
 
 # --- Configuration ---
 SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyUSB0')
@@ -116,6 +118,28 @@ def main():
     last_pm25 = None
     last_pm10 = None
     db_buffer = [] # In-memory queue for batch inserts
+    
+    def cleanup(signum=None, frame=None):
+        print("\nShutdown signal received. Exiting gracefully...")
+        if db_conn:
+            try:
+                if db_buffer:
+                    cursor = db_conn.cursor()
+                    cursor.executemany('INSERT INTO data (timestamp, pm25, pm10) VALUES (?, ?, ?)', db_buffer)
+                    db_conn.commit()
+                    print(f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] Final batch committed to SQLite upon exit ({len(db_buffer)} records).")
+                db_conn.close()
+            except Exception as e:
+                logging.error(f"Final database batch error: {e}")
+        if ser and ser.is_open:
+            ser.close()
+        if sock:
+            sock.close()
+        print("Shutdown complete.")
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, cleanup)
+    signal.signal(signal.SIGTERM, cleanup)
     
     while True:
         try:

@@ -118,6 +118,15 @@ classdef AirQualitySystem < handle
                     obj.FeatureMu = data.FeatureMu;
                     obj.FeatureSigma = data.FeatureSigma;
                     fprintf('Pre-trained ML model loaded successfully (Zero-latency startup).\n');
+                    
+                    % Check model age to ensure baseline accuracy in new environments
+                    fileInfo = dir(modelPath);
+                    if ~isempty(fileInfo)
+                        daysOld = days(datetime('now') - datetime(fileInfo.datenum, 'ConvertFrom', 'datenum'));
+                        if daysOld > 7
+                            fprintf('WARNING: trainedModel.mat is %.1f days old. Consider retraining if the sensor has moved to a new environment to maintain accurate Z-score baselines.\n', daysOld);
+                        end
+                    end
                 catch ME
                     fprintf('Failed to load pre-trained model: %s. Falling back to heuristics.\n', ME.message);
                     obj.MLModel = [];
