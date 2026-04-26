@@ -35,7 +35,9 @@ for i = 1:length(logFiles)
         T.Features_7D = T{:, featCols};
         T = removevars(T, featCols);
     end
-    if ismember('Features_7D', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames)
+    % Only merge tables that have the required columns AND compatible width
+    if ismember('Features_7D', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames) ...
+            && (isempty(allData) || width(T) == width(allData))
         allData = [allData; T];
     end
 end

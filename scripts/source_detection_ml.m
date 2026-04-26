@@ -76,11 +76,13 @@ grid on;
 % Subplot 2: Feature Importance
 subplot(2,1,2);
 model = fillVariablesImportance(model, X, Y); % Custom importance calculation
-bar(model.VariableImportance);
-set(gca, 'XTickLabel', featureNames);
-title('Random Forest Feature Importance');
-ylabel('Importance Score');
-grid on;
+if ~isempty(model.OOBPermutedPredictorDeltaError)
+    bar(model.OOBPermutedPredictorDeltaError);
+    set(gca, 'XTickLabel', featureNames);
+    title('Random Forest Feature Importance');
+    ylabel('Importance Score');
+    grid on;
+end
 
 function model = fillVariablesImportance(model, X, Y)
     % Helper to compute variable importance if not natively calculated
