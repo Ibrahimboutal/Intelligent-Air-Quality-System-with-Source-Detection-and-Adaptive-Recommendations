@@ -11,12 +11,14 @@ A professional-grade, distributed air quality monitoring system implementing a f
 
 ## 🌟 Research Highlights
 
-*   **Zero-Latency Telemetry:** High-performance TCP socket link ($<1ms$ latency) replaces legacy CSV polling.
-*   **Bayesian Signal Denoising:** Recursive **Kalman Filter** removes sensor noise before feature extraction, with a comparative SNR study vs. Savitzky-Golay.
-*   **Leakage-Free Training:** Chronological 80/20 train-test splits with **5-fold cross-validation** ensure statistically rigorous model evaluation.
-*   **Explainable AI (XAI):** OOB permutation importance, per-class feature heatmaps, and **PCA decision boundaries** explain every classification decision.
-*   **Rigorous Forecasting:** Holt-Winters backtesting with **RMSE/MAE vs. Horizon curves**, hyperparameter sensitivity heatmaps, and residual ACF white-noise testing.
-*   **Unsupervised Novelty Detection:** A from-scratch **Isolation Forest** (Liu et al., 2008) detects unknown pollution events the supervised model has never seen.
+*   **Zero-Latency Telemetry:** High-performance TCP socket link ($<1ms$ latency) with **Exponential Backoff** resilience.
+*   **Bayesian Signal Denoising:** Recursive **Kalman Filter** removes sensor noise with robust **NaN-gap bridging** logic.
+*   **Temporal Feature Engineering:** **8D Feature Vector** including Acceleration (2nd derivative) to differentiate leaks from ambient buildup.
+*   **Leakage-Free Validation:** Strict **Time-Series Expanding-Window Cross-Validation** prevents future-data leakage.
+*   **Advanced Evaluation:** Macro-averaged F1-Scores and **Precision-Recall (PR) Curves** for imbalanced hazardous events.
+*   **Explainable AI (XAI):** Permutation importance, per-class heatmaps, and local **SHAP breakdown** for specific alerts.
+*   **Rigorous Forecasting:** Holt-Winters backtesting with **strict causality verification** (fixed offset leakage).
+*   **Unsupervised Novelty Detection:** From-scratch **Isolation Forest** (normalized multi-pollutant scaling) for zero-day event detection.
 
 ---
 
@@ -34,12 +36,12 @@ flowchart TD
 
     subgraph "Intelligence Layer (MATLAB)"
         D -->|JSON Stream| E[Intelligence Hub]
-        E --> KF["Kalman Filter (Phase 2)"]
-        KF --> F[7D Feature Extraction]
+        E --> KF["Kalman Filter (Phase 2: NaN-Resilient)"]
+        KF --> F[8D Feature Extraction (Phase 1: +Acceleration)]
         F --> G["Random Forest Classifier (Phase 1 & 3)"]
-        F --> IF["Isolation Forest (Phase 5)"]
-        E --> H["Recursive HW Forecaster (Phase 4)"]
-        G --> I[Adaptive Recommendation]
+        F --> IF["Isolation Forest (Phase 5: Scaled)"]
+        E --> H["Recursive HW Forecaster (Phase 4: Causality-Fixed)"]
+        G --> I["Adaptive Logic (Dynamic Thresholding)"]
         IF --> I
         H --> I
         I --> J[Live Dashboard]
@@ -72,15 +74,18 @@ The `scripts/air_quality_monitor.py` service runs as a `systemd` daemon. It hand
 `src/KalmanFilter1D.m` implements a recursive Bayesian estimator with Joseph-form covariance update. `scripts/compare_filter_performance.m` conducts a comparative study (Raw vs. Kalman vs. Savitzky-Golay), quantifying SNR improvement in dB and measuring downstream ML accuracy impact.
 
 ### 3. Feature Engineering & Machine Learning
-*   **7D Feature Vector:** Ratio, ROC, Moving Averages (5/15s), Volatility, Skewness, Kurtosis — extracted from the **Kalman-filtered** signal.
+*   **8D Feature Vector:** Ratio, ROC, **Acceleration (2nd Derivative)**, Moving Averages (5/15s), Volatility, Skewness, Kurtosis.
 *   **Ensemble Classification:** A pre-trained Random Forest detects pollution sources (Traffic, Dust, Local Combustion).
+*   **Adaptive Recommendation:** Dynamic thresholds calculated via moving-window statistics ($ \mu + 3\sigma $) rather than hardcoded limits.
 
 ### 4. Statistical Validation
-*   `scripts/evaluate_model_performance.m` — Confusion matrix, per-class Precision, Recall, and F1-Score on a chronological 20% holdout.
-*   `scripts/cross_validate_system.m` — 5-fold cross-validation with 95% confidence intervals.
+*   `scripts/evaluate_model_performance.m` — PR Curves, AUC, and Macro-F1 on chronological holdouts.
+*   `scripts/cross_validate_system.m` — **Rolling-Origin Expanding-Window CV** (Time-Series Aware).
 
 ### 5. Explainability (XAI)
-`scripts/explain_model.m` provides four complementary views: OOB Permutation Importance, Per-Class Feature Heatmap, Model-Agnostic Permutation Importance, and a PCA Decision Boundary projection.
+`scripts/explain_model.m` provides deep interpretability:
+*   **Global:** Permutation Importance and PCA projection.
+*   **Local:** **SHAP Value Breakdown** (using MATLAB `shapley`) to explain precisely *why* a specific alert was triggered (e.g. "80% driven by sudden ROC spike").
 
 ### 6. Predictive Intelligence & Backtesting
 `scripts/backtest_forecaster.m` evaluates the Holt-Winters forecaster at horizons of 1, 3, 5, 10, and 15 minutes — producing RMSE/MAE curves, an $\alpha$/$\beta$ sensitivity heatmap, a residual ACF white-noise test, and an actual-vs-predicted plot with uncertainty bands.

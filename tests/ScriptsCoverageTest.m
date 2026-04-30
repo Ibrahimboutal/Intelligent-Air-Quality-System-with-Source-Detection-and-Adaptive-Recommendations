@@ -186,6 +186,11 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             testCase.verifyTrue(true);
         end
 
+        function testStatisticalDiagnosticReport(testCase)
+            ScriptsCoverageTest.safeRun('statistical_diagnostic_report.m');
+            testCase.verifyTrue(true);
+        end
+
     end
 
     % -----------------------------------------------------------------------
