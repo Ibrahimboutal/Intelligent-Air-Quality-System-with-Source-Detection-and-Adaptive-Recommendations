@@ -58,7 +58,7 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             for mpath = {fullfile(rootModels,'trainedModel.mat'), ...
                          fullfile(scriptsModels,'trainedModel.mat')}
                 if ~exist(mpath{1}, 'file')
-                    MLModel = 1; FeatureMu = zeros(1,7); FeatureSigma = ones(1,7); %#ok<NASGU>
+                    MLModel = 1; FeatureMu = zeros(1,8); FeatureSigma = ones(1,8); %#ok<NASGU>
                     save(mpath{1}, 'MLModel', 'FeatureMu', 'FeatureSigma');
                 end
             end
@@ -216,7 +216,7 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             PM10Filtered  = PM10 + 0.5*randn(n,1);
             pm25          = PM25;   % lower-case aliases for older scripts
             pm10          = PM10;
-            Features_7D   = rand(n, 7);
+            Features_8D   = rand(n, 8);
             Forecast_PM25 = PM25 + randn(n,1)*2;
             NoveltyScores = rand(n,1) * 0.5;
             NoveltyData   = false(n,1);
@@ -233,7 +233,7 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
             Advice(85:95)  = "Unhealthy - open window / reduce activity";
 
             T = table(Time_s, Timestamp, PM25, PM10, PM25Filtered, PM10Filtered, ...
-                      pm25, pm10, Features_7D, Forecast_PM25, ...
+                      pm25, pm10, Features_8D, Forecast_PM25, ...
                       NoveltyScores, NoveltyData, Source, Advice);
         end
 

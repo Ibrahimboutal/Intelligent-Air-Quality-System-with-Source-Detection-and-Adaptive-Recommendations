@@ -37,11 +37,11 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
         function testFeatureExtraction(testCase)
             testCase.Sys.PM25Data = [10, 12, 15, 14, 13, 16];
             testCase.Sys.PM10Data = [20, 22, 25, 24, 23, 26];
-            testCase.Sys.FeatureMu = zeros(1, 7);
-            testCase.Sys.FeatureSigma = ones(1, 7);
+            testCase.Sys.FeatureMu = zeros(1, 8);
+            testCase.Sys.FeatureSigma = ones(1, 8);
             
             features = testCase.Sys.extractFeatures(6);
-            testCase.verifyEqual(length(features), 7);
+            testCase.verifyEqual(length(features), 8);
             testCase.verifyEqual(features(2), 3); % ROC: 16 - 13
         end
         
@@ -63,12 +63,12 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             % Case: Stable environment
             testCase.Sys.PM25Data = ones(1, 100) * 10;
             testCase.Sys.PM10Data = ones(1, 100) * 20;
-            [source, advice] = testCase.Sys.analyze(100, zeros(1,7), 10);
+            [source, advice] = testCase.Sys.analyze(100, zeros(1,8), 10);
             testCase.verifyEqual(source, "Clean");
             
             % Case: Outlier relative to baseline
             testCase.Sys.PM25Data(101) = 100;
-            [source, ~] = testCase.Sys.analyze(101, [0.8, 90, 0, 0, 0, 0, 0], 100);
+            [source, ~] = testCase.Sys.analyze(101, [0.8, 90, 0, 0, 0, 0, 0, 0], 100);
             testCase.verifyTrue(source ~= "Clean");
         end
         
@@ -127,7 +127,7 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             modelPath = fullfile(modelDir, 'trainedModel.mat');
             
             % Save a dummy model
-            MLModel = 1; FeatureMu = zeros(1,7); FeatureSigma = ones(1,7);
+            MLModel = 1; FeatureMu = zeros(1,8); FeatureSigma = ones(1,8);
             save(modelPath, 'MLModel', 'FeatureMu', 'FeatureSigma');
             
             % Verify file exists before proceeding
@@ -150,7 +150,7 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             testCase.Sys.PM10Data = rand(1, numSamples);
             testCase.Sys.PM25Filtered = rand(1, numSamples);
             testCase.Sys.PM10Filtered = rand(1, numSamples);
-            testCase.Sys.FeatureMatrix = rand(numSamples, 7);
+            testCase.Sys.FeatureMatrix = rand(numSamples, 8);
             testCase.Sys.ForecastData = rand(1, numSamples);
             testCase.Sys.NoveltyScores = rand(1, numSamples);
             testCase.Sys.NoveltyData = false(1, numSamples);
@@ -187,9 +187,9 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             % Generate enough data to satisfy the 80/20 split and correlation matrix
             numSamples = 50;
             T = table((1:numSamples)', rand(numSamples, 1)*50, rand(numSamples, 1)*80, ...
-                      rand(numSamples, 7), rand(numSamples, 1)*50, ...
+                      rand(numSamples, 8), rand(numSamples, 1)*50, ...
                       repmat("Clean", numSamples, 1), repmat("OK", numSamples, 1), ...
-                      'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_7D', 'Forecast_PM25', 'Source', 'Advice'});
+                      'VariableNames', {'Time_s', 'PM25', 'PM10', 'Features_8D', 'Forecast_PM25', 'Source', 'Advice'});
             
             % Save to a format the script expects (AQI_Log_*.csv)
             logPath = fullfile(logDir, 'AQI_Log_TestMock.csv');
@@ -334,7 +334,7 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             obj.PM10Filtered  = NaN(1, numSamples);
             obj.SourceData    = strings(1, numSamples);
             obj.AdviceData    = strings(1, numSamples);
-            obj.FeatureMatrix = NaN(numSamples, 7);
+            obj.FeatureMatrix = NaN(numSamples, 8);
             obj.ForecastData  = NaN(1, numSamples);
             obj.NoveltyData   = false(1, numSamples);
             obj.NoveltyScores = NaN(1, numSamples);

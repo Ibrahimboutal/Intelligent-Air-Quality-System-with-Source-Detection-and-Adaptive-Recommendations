@@ -21,7 +21,7 @@ N = height(rawTbl);
 fprintf('Successfully loaded %d raw samples from %d log files.\n', N, length(logFiles));
 
 % 2. Extract Features using the AirQualitySystem Intelligence Core
-disp('Engineering 7D Features and extracting baseline labels...');
+disp('Engineering 8D Features and extracting baseline labels...');
 % Initialize system in simulation mode to avoid hardware connection
 aq = AirQualitySystem('127.0.0.1','pi','pass','COM1',9600,true);
 aq.MLModel = []; % Force the system to use dynamic heuristics to generate labels
@@ -29,7 +29,7 @@ aq.MLModel = []; % Force the system to use dynamic heuristics to generate labels
 aq.PM25Data = rawTbl.PM25';
 aq.PM10Data = rawTbl.PM10';
 
-X_raw = zeros(N, 7);
+X_raw = zeros(N, 8);
 Y_raw = strings(N, 1);
 
 for k = 1:N
