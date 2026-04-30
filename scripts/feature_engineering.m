@@ -42,6 +42,10 @@ data.pm10_avg = movmean(data.PM10, 5);
 data.pm25_diff = [0; diff(data.PM25)];
 data.pm10_diff = [0; diff(data.PM10)];
 
+% Acceleration (Rate of rate of change)
+data.pm25_accel = [0; diff(data.pm25_diff)];
+data.pm10_accel = [0; diff(data.pm10_diff)];
+
 % Ratio (Intelligence: High ratio indicates combustion/smoke, Low indicates dust)
 data.ratio = data.PM25 ./ max(data.PM10, 0.1); % Prevent division by zero
 

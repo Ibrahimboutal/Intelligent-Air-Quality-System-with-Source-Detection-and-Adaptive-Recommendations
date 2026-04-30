@@ -118,6 +118,7 @@ def main():
     last_pm25 = None
     last_pm10 = None
     db_buffer = [] # In-memory queue for batch inserts
+    backoff_delay = 1 # Exponential backoff for telemetry
     
     def cleanup(signum=None, frame=None):
         print("\nShutdown signal received. Exiting gracefully...")
@@ -166,9 +167,13 @@ def main():
                         
                     sock.connect((MATLAB_IP, MATLAB_PORT))
                     print("Telemetry link established.")
+                    backoff_delay = 1 # Reset backoff upon success
                 except Exception as e:
                     logging.error(f"Telemetry link failed: {e}")
                     sock = None # Retry in next loop
+                    print(f"Retrying connection in {backoff_delay} seconds...")
+                    time.sleep(backoff_delay)
+                    backoff_delay = min(backoff_delay * 2, 60) # Max 60s cap
             
             # 3. Data Acquisition
             result = read_sds011(ser)

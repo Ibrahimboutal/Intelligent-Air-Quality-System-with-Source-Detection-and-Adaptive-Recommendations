@@ -33,8 +33,8 @@ for i = 1:length(logFiles)
     tempTbl = readtable(fullfile(logDir, logFiles(i).name));
     
     % Skip old logs that do not have feature variables
-    if ~any(startsWith(tempTbl.Properties.VariableNames, 'Features_7D'))
-        fprintf('   Skipping %s (No Features_7D columns found)\n', logFiles(i).name);
+    if ~any(startsWith(tempTbl.Properties.VariableNames, 'Features_'))
+        fprintf('   Skipping %s (No Features columns found)\n', logFiles(i).name);
         continue;
     end
     
@@ -46,14 +46,14 @@ for i = 1:length(logFiles)
     end
 end
 
-% Extract Features (7D) and Source Labels
-featureCols = startsWith(dataTbl.Properties.VariableNames, 'Features_7D');
+% Extract Features and Source Labels
+featureCols = startsWith(dataTbl.Properties.VariableNames, 'Features_');
 if ~any(featureCols)
-    error('No feature columns found. Ensure the logs contain "Features_7D" variables.');
+    error('No feature columns found. Ensure the logs contain "Features_..." variables.');
 end
 X_raw = dataTbl{:, featureCols};
-if size(X_raw, 2) ~= 7
-    error('Expected 7 feature columns, found %d. Check your log files.', size(X_raw, 2));
+if size(X_raw, 2) ~= 8
+    error('Expected 8 feature columns, found %d. Check your log files.', size(X_raw, 2));
 end
 Y_raw = dataTbl.Source;
 
@@ -64,7 +64,7 @@ fprintf('   Successfully loaded %d total physical samples.\n', N);
 
 %% 2. Feature Selection Validation (Collinearity Check)
 fprintf('2. Validating Feature Orthogonality (Correlation Matrix)...\n');
-featureNames = {'Ratio', 'ROC', 'MA5', 'MA15', 'Std5', 'Skew15', 'Kurt15'};
+featureNames = {'Ratio', 'ROC', 'Accel', 'MA5', 'MA15', 'Std5', 'Skew15', 'Kurt15'};
 R = corrcoef(X_raw);
 
 figure('Name', 'Feature Correlation Heatmap', 'Color', 'w');

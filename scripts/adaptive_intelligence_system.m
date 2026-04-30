@@ -58,13 +58,27 @@ for i = 1:height(data)
     trend = data.pm25_diff(i);
     predicted = data.forecast(i);
     
-    if currPM25 > 50
+    % Dynamic thresholds (rolling 60-sample window)
+    window_start = max(1, i-60);
+    window = data.pm25(window_start:i);
+    baseline = mean(window, 'omitnan');
+    std_dev = std(window, 'omitnan');
+    if std_dev == 0 || isnan(std_dev), std_dev = 5; end
+    
+    % Adaptive thresholds
+    danger_thresh = baseline + 3 * std_dev;
+    danger_thresh = max(danger_thresh, 50); % Minimum absolute cap
+    
+    moderate_thresh = baseline + 1.5 * std_dev;
+    moderate_thresh = max(moderate_thresh, 25); % Minimum absolute cap
+    
+    if currPM25 > danger_thresh
         recommendation(i) = "DANGER: Wear mask & activate purifier";
-    elseif trend > 5 || (i > 1 && predicted > 35)
+    elseif trend > 5 || (i > 1 && predicted > danger_thresh * 0.7)
         recommendation(i) = "PRE-EMPTIVE: Close windows - quality worsening";
     elseif data.source(i) == "Dust"
         recommendation(i) = "CAUTION: Outdoor dust detected - avoid exercise";
-    elseif currPM25 > 25
+    elseif currPM25 > moderate_thresh
         recommendation(i) = "MODERATE: Consider ventilation";
     else
         recommendation(i) = "Air is acceptable";

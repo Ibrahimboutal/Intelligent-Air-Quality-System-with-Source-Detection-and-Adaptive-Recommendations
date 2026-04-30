@@ -29,22 +29,9 @@ else
     fprintf('Running in CI Headless mode...\n');
 end
 
-% Create TCP Server (with robust backward compatibility)
+% Initial TCP Server connection attempt will be handled in the main loop
 server = [];
 useLegacy = false;
-try
-    if ~isempty(which('tcpserver'))
-        server = tcpserver("0.0.0.0", port, "Timeout", 1);
-        useLegacy = false;
-    elseif ~isempty(which('tcpip'))
-        server = tcpip('0.0.0.0', port, 'NetworkRole', 'server', 'Timeout', 1);
-        set(server, 'InputBufferSize', 10000);
-        fopen(server);
-        useLegacy = true;
-    end
-catch ME
-    warning('TCP Server initialization failed: %s', ME.message);
-end
 
 % Initialize Data Science state
 aqSystem = AirQualitySystem(piIP, getenv('PI_USER'), getenv('PI_PASS'), getenv('SERIAL_PORT'), str2double(getenv('BAUD_RATE')), true);
@@ -62,6 +49,43 @@ count = 0;
 % Main loop
 startTime = tic;
 while (isHeadless && toc(startTime) < 3) || (~isHeadless && ishghandle(fig))
+    % --- Socket Resilience: Automatic Reconnection ---
+    needs_reconnect = isempty(server);
+    if ~needs_reconnect
+        try
+            if ~useLegacy && ~isvalid(server)
+                needs_reconnect = true;
+            elseif useLegacy && ~strcmp(server.Status, 'open')
+                needs_reconnect = true;
+            end
+        catch
+            needs_reconnect = true;
+        end
+    end
+    
+    if needs_reconnect
+        try
+            if ~isempty(server)
+                try if useLegacy, fclose(server); end, catch, end
+                try delete(server); catch, end
+            end
+            if ~isempty(which('tcpserver'))
+                server = tcpserver("0.0.0.0", port, "Timeout", 1);
+                useLegacy = false;
+            elseif ~isempty(which('tcpip'))
+                server = tcpip('0.0.0.0', port, 'NetworkRole', 'server', 'Timeout', 1);
+                set(server, 'InputBufferSize', 10000);
+                fopen(server);
+                useLegacy = true;
+            end
+            fprintf('TCP Server listening on port %d...\n', port);
+        catch ME
+            fprintf('TCP Server connection failed: %s. Retrying in 2 seconds...\n', ME.message);
+            pause(2);
+            continue;
+        end
+    end
+    
     dataAvailable = false;
     if ~isempty(server)
         try

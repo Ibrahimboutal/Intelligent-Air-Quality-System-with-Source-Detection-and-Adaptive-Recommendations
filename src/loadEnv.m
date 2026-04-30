@@ -6,8 +6,13 @@ function loadEnv(filename)
     end
     
     if ~isfile(filename)
-        warning('Environment file %s not found. Proceeding without it.', filename);
-        return;
+        if isfile('.env.example')
+            warning('Environment file %s not found. Falling back to .env.example for default configurations.', filename);
+            filename = '.env.example';
+        else
+            warning('Environment file %s not found. Proceeding without it.', filename);
+            return;
+        end
     end
     
     fid = fopen(filename, 'r');

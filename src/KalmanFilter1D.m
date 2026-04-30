@@ -59,7 +59,18 @@ classdef KalmanFilter1D < handle
                 if isnan(obj.x_est)
                     x_filtered = NaN;
                 else
-                    x_filtered = obj.x_est;  % Hold last estimate on bad read
+                    % --- PREDICT Step Only ---
+                    % State prediction (constant velocity)
+                    % obj.x_est = obj.x_est; (unchanged)
+                    
+                    % Covariance prediction (uncertainty grows during gaps)
+                    obj.P_est = obj.P_est + obj.Q; 
+                    
+                    x_filtered = obj.x_est;  % Return prediction as best estimate
+                    
+                    % Log dummy values for gap
+                    obj.Innovation(end+1) = NaN;
+                    obj.KalmanGain(end+1) = 0;
                 end
                 return;
             end

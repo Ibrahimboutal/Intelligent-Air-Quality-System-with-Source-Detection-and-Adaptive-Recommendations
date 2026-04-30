@@ -45,6 +45,11 @@ classdef IsolationForestAD < handle
             obj.FeatureMaxs = max(X);
             obj.Trees = cell(obj.NumTrees, 1);
 
+            % Min-Max Normalize X for training
+            range = obj.FeatureMaxs - obj.FeatureMins;
+            range(range == 0) = 1; % Prevent division by zero
+            X_norm = (X - obj.FeatureMins) ./ range;
+
             psi = min(obj.SubSampleSize, n);   % effective sub-sample size
             hlim = ceil(log2(psi));             % height limit
 
@@ -53,7 +58,7 @@ classdef IsolationForestAD < handle
             for t = 1:obj.NumTrees
                 % Draw a random sub-sample (without replacement)
                 idx = randperm(n, psi);
-                obj.Trees{t} = obj.buildTree(X(idx, :), 0, hlim);
+                obj.Trees{t} = obj.buildTree(X_norm(idx, :), 0, hlim);
             end
             fprintf('Isolation Forest fitted successfully.\n');
         end
@@ -64,9 +69,14 @@ classdef IsolationForestAD < handle
             n = size(X, 1);
             path_lengths = zeros(n, obj.NumTrees);
 
+            % Min-Max Normalize X using trained limits
+            range = obj.FeatureMaxs - obj.FeatureMins;
+            range(range == 0) = 1;
+            X_norm = (X - obj.FeatureMins) ./ range;
+
             for t = 1:obj.NumTrees
                 for i = 1:n
-                    path_lengths(i, t) = obj.pathLength(X(i,:), obj.Trees{t}, 0);
+                    path_lengths(i, t) = obj.pathLength(X_norm(i,:), obj.Trees{t}, 0);
                 end
             end
 

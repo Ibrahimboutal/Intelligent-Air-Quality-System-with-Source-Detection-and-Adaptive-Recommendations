@@ -13,7 +13,7 @@
 clear; close all; clc;
 addpath(fullfile(pwd, 'src'));
 
-FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', ...
+FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', 'Acceleration', ...
                  'MA-5s', 'MA-15s', 'Volatility (Std)', ...
                  'Skewness', 'Kurtosis'};
 
@@ -29,14 +29,14 @@ end
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    % Reconstruct Features_7D matrix from CSV-split columns
-    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    % Reconstruct Features matrix from CSV-split columns
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_'));
     if ~isempty(featCols)
-        T.Features_7D = T{:, featCols};
+        T.Features = T{:, featCols};
         T = removevars(T, featCols);
     end
     % Only merge tables that have the required columns AND compatible width
-    if ismember('Features_7D', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames) ...
+    if ismember('Features', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames) ...
             && (isempty(allData) || width(T) == width(allData))
         allData = [allData; T];
     end
@@ -44,7 +44,7 @@ end
 
 validIdx = ~isnan(allData.PM25) & ~strcmp(allData.Source, '');
 data     = allData(validIdx, :);
-X        = data.Features_7D;
+X        = data.Features;
 y        = categorical(data.Source);
 classes  = categories(y);
 numClasses = numel(classes);
@@ -79,11 +79,11 @@ figure('Name', 'Phase 3 - XAI: Feature Importance', 'Color', 'w', 'Position', [5
 %% Panel 1: Global Feature Importance
 ax1 = subplot(2, 2, 1);
 hb = barh(sorted_imp, 'FaceColor', 'flat');
-cmap = parula(7);
+cmap = parula(8);
 for i = 1:length(sorted_imp)
     hb.CData(i,:) = cmap(i,:);
 end
-set(ax1, 'YTick', 1:7, 'YTickLabel', flip(sorted_names));
+set(ax1, 'YTick', 1:8, 'YTickLabel', flip(sorted_names));
 xlabel('Normalized Importance Score');
 title('Global Feature Importance (OOB Permutation)', 'FontWeight', 'bold');
 grid on; xlim([0 1.1]);
@@ -97,7 +97,7 @@ end
 % 3. PER-CLASS FEATURE CONTRIBUTION (Approximated via mean feature value)
 % ===========================================================================
 ax2 = subplot(2, 2, 2);
-class_means = zeros(numClasses, 7);
+class_means = zeros(numClasses, 8);
 for c = 1:numClasses
     class_mask = y_train == classes{c};
     if any(class_mask)
@@ -107,7 +107,7 @@ end
 
 % Normalize per feature for heatmap visualization
 class_means_norm = class_means;
-for f = 1:7
+for f = 1:8
     col = class_means(:,f);
     rng_f = max(col) - min(col);
     if rng_f > 0
@@ -118,7 +118,7 @@ end
 imagesc(class_means_norm);
 colormap(ax2, hot);
 colorbar;
-set(ax2, 'XTick', 1:7, 'XTickLabel', FEATURE_NAMES, 'XTickLabelRotation', 30, ...
+set(ax2, 'XTick', 1:8, 'XTickLabel', FEATURE_NAMES, 'XTickLabelRotation', 30, ...
          'YTick', 1:numClasses, 'YTickLabel', classes);
 title('Per-Class Feature Contribution Heatmap', 'FontWeight', 'bold');
 xlabel('Feature'); ylabel('Pollution Source');
@@ -130,8 +130,8 @@ ax3 = subplot(2, 2, 3);
 y_pred_base = categorical(predict(B, X_test));
 base_acc = sum(y_pred_base == y_test) / numel(y_test);
 
-perm_importance = zeros(1, 7);
-for f = 1:7
+perm_importance = zeros(1, 8);
+for f = 1:8
     X_perm = X_test;
     X_perm(:,f) = X_perm(randperm(size(X_perm,1)), f); % Shuffle feature f
     y_pred_perm = categorical(predict(B, X_perm));
@@ -141,14 +141,14 @@ end
 
 [~, perm_sort_idx] = sort(perm_importance, 'descend');
 bar(ax3, perm_importance(perm_sort_idx), 'FaceColor', [0.2 0.5 0.8]);
-set(ax3, 'XTick', 1:7, 'XTickLabel', FEATURE_NAMES(perm_sort_idx), ...
+set(ax3, 'XTick', 1:8, 'XTickLabel', FEATURE_NAMES(perm_sort_idx), ...
     'XTickLabelRotation', 30);
 ylabel('Drop in Accuracy (baseline - permuted)');
 title('Permutation Feature Importance (Model-Agnostic)', 'FontWeight', 'bold');
 yline(0, 'k--'); grid on;
 
 fprintf('\n--- Permutation Importance (Drop in Accuracy) ---\n');
-for f = 1:7
+for f = 1:8
     fprintf('  %-25s: %.4f\n', FEATURE_NAMES{perm_sort_idx(f)}, perm_importance(perm_sort_idx(f)));
 end
 fprintf('  Baseline Accuracy: %.2f%%\n', base_acc * 100);
@@ -184,5 +184,51 @@ title('Decision Boundary (PCA 2D Projection)', 'FontWeight', 'bold');
 xlabel('PC1'); ylabel('PC2');
 legend('Location', 'best', 'FontSize', 8);
 grid on;
+
+% ===========================================================================
+% 6. LOCAL INTERPRETABILITY (SHAP VALUES)
+% ===========================================================================
+fprintf('\nComputing SHAP values for a specific anomaly prediction...\n');
+
+% Find a test sample predicted as an anomaly (not 'Clean' or 'Normal')
+anomaly_idx = find(y_pred_base ~= 'Clean' & y_pred_base ~= 'Normal', 1);
+if isempty(anomaly_idx)
+    anomaly_idx = 1; % Fallback
+end
+
+queryPoint = X_test(anomaly_idx, :);
+predictedClass = string(y_pred_base(anomaly_idx));
+
+try
+    % Use MATLAB's built-in shapley function (requires R2022b+)
+    % TreeBagger might need a custom wrapper for probabilities, but we will try directly
+    explainer = shapley(B, X_train, 'QueryPoint', queryPoint);
+    
+    figure('Name', 'Phase 3 - XAI: Local SHAP Explanation', 'Color', 'w', 'Position', [100, 100, 800, 500]);
+    plot(explainer);
+    title(sprintf('SHAP Explanation for Detected "%s" Event', predictedClass), 'FontWeight', 'bold');
+    
+    fprintf('Local SHAP explanation generated for a "%s" prediction.\n', predictedClass);
+    
+catch ME
+    fprintf('Note: Could not generate SHAP values via built-in function (requires newer MATLAB version).\n');
+    fprintf('Error: %s\n', ME.message);
+    
+    % Fallback: Simple heuristic breakdown based on feature deviation from mean
+    fprintf('Falling back to Z-score deviation breakdown...\n');
+    global_mean = mean(X_train, 1, 'omitnan');
+    
+    deviation = abs(queryPoint - global_mean);
+    total_dev = sum(deviation);
+    if total_dev == 0, total_dev = 1; end
+    
+    fprintf('\n--- Local Feature Breakdown for Alert: %s ---\n', predictedClass);
+    for f = 1:8
+        pct = (deviation(f) / total_dev) * 100;
+        if pct > 10
+            fprintf('  %.1f%% driven by %s\n', pct, FEATURE_NAMES{f});
+        end
+    end
+end
 
 fprintf('\nPhase 3 (XAI) complete.\n');

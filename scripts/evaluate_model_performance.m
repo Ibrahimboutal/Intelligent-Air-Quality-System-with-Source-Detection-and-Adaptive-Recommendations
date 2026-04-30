@@ -20,7 +20,7 @@ for i = 1:length(logFiles)
     
     % Check if this file has 'Source' and at least one 'Features_7D' column
     hasSource = ismember('Source', varNames);
-    hasFeatures = any(startsWith(varNames, 'Features_7D'));
+    hasFeatures = any(startsWith(varNames, 'Features_'));
     
     if ~(hasSource && hasFeatures)
         fprintf(' -> Skipping %s (missing ML columns)\n', logFiles(i).name);
@@ -46,7 +46,7 @@ validIdx = ~isnan(allData.PM25) & ~strcmp(string(allData.Source), "");
 data = allData(validIdx, :);
 
 % Dynamically extract all columns that belong to the Feature vector
-featureCols = data.Properties.VariableNames(startsWith(data.Properties.VariableNames, 'Features_7D'));
+featureCols = data.Properties.VariableNames(startsWith(data.Properties.VariableNames, 'Features_'));
 
 % Reconstruct the X matrix (N samples x Features)
 X = data{:, featureCols}; 
@@ -77,7 +77,7 @@ B = TreeBagger(numTrees, X_train, y_train, 'Method', 'classification', ...
 
 % --- 5. Evaluation ---
 fprintf('Predicting on Test Set (20%% split)...\n');
-y_pred_str = predict(B, X_test);
+[y_pred_str, scores] = predict(B, X_test);
 y_pred = categorical(y_pred_str);
 
 % Generate Confusion Matrix
@@ -115,6 +115,31 @@ for i = 1:numClasses
 end
 fprintf('%s\n', repmat('-', 1, 65));
 fprintf('%-25s | %-10.3f | %-10.3f | %-10.3f\n', 'AVERAGE (Macro)', mean(precision), mean(recall), mean(f1Score));
+
+% --- 5b. Precision-Recall Curves ---
+figure('Name', 'Precision-Recall Curves', 'Color', 'w', 'Position', [150, 150, 800, 600]);
+hold on;
+colors = lines(numClasses);
+for i = 1:numClasses
+    class_label = classes{i};
+    % Create binary ground truth for the current class
+    true_binary = (y_test == class_label);
+    
+    % Check if class is present in test set to avoid perfcurve errors
+    if sum(true_binary) > 0
+        % Calculate PR curve: X = Recall, Y = Precision
+        [X_pr, Y_pr, ~, AUC_pr] = perfcurve(true_binary, scores(:, i), true, 'XCrit', 'reca', 'YCrit', 'prec');
+        plot(X_pr, Y_pr, 'LineWidth', 2, 'Color', colors(i,:), ...
+            'DisplayName', sprintf('%s (AUC = %.3f)', class_label, AUC_pr));
+    end
+end
+xlabel('Recall');
+ylabel('Precision');
+title('Precision-Recall Curves');
+legend('Location', 'best');
+grid on;
+hold off;
+fprintf('\nPrecision-Recall curves generated.\n');
 
 % --- 6. Save Model for Deployment ---
 % Save the trained model and scaling parameters back to models/

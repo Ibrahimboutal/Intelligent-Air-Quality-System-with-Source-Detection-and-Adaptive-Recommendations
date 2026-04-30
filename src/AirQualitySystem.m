@@ -178,7 +178,7 @@ classdef AirQualitySystem < handle
             obj.PM10Filtered = NaN(1, numSamples);
             obj.SourceData   = strings(1, numSamples);
             obj.AdviceData   = strings(1, numSamples);
-            obj.FeatureMatrix = NaN(numSamples, 7);
+            obj.FeatureMatrix = NaN(numSamples, 8);
             obj.ForecastData  = NaN(1, numSamples);
             obj.NoveltyData   = false(1, numSamples);
             obj.NoveltyScores = NaN(1, numSamples);
@@ -286,7 +286,7 @@ classdef AirQualitySystem < handle
                               obj.NoveltyScores(validIdx)', obj.NoveltyData(validIdx)', ...
                               obj.SourceData(validIdx)', obj.AdviceData(validIdx)', ...
                               'VariableNames', {'Time_s', 'PM25', 'PM10', 'PM25Filtered', 'PM10Filtered', ...
-                                                'Features_7D', 'Forecast_PM25', 'NoveltyScores', 'NoveltyData', ...
+                                                'Features_8D', 'Forecast_PM25', 'NoveltyScores', 'NoveltyData', ...
                                                 'Source', 'Advice'});
                     
                     filename = fullfile('logs', sprintf('AQI_Log_%s.csv', datestr(now, 'yyyymmdd_HHMMSS')));
@@ -424,13 +424,26 @@ classdef AirQualitySystem < handle
             end
             
             % --- Predictive Recommendations ---
-            if pm25 >= 35
+            if k > 5
+                window = max(1, k-60):k-1;
+                baseline = mean(obj.PM25Data(window), 'omitnan');
+                std_dev = std(obj.PM25Data(window), 'omitnan');
+                if std_dev == 0 || isnan(std_dev), std_dev = 5; end
+            else
+                baseline = 10;
+                std_dev = 5;
+            end
+            
+            danger_thresh = max(baseline + 3 * std_dev, 35);
+            moderate_thresh = max(baseline + 1.5 * std_dev, 15);
+            
+            if pm25 >= danger_thresh
                 advice = "Unhealthy - open window / reduce activity";
-            elseif predictedPM25 >= 35
+            elseif predictedPM25 >= danger_thresh
                 advice = "PRE-EMPTIVE WARNING: Forecasted Spike - Close Windows Now";
-            elseif pm25 >= 15
+            elseif pm25 >= moderate_thresh
                 advice = "Moderate - consider ventilation";
-            elseif predictedPM25 >= 15
+            elseif predictedPM25 >= moderate_thresh
                 advice = "Forecasted Moderate - monitor conditions";
             else
                 advice = "Air is clean";
@@ -438,7 +451,7 @@ classdef AirQualitySystem < handle
         end
         
         function features = extractFeatures(obj, k)
-            % Extract a 7D feature vector for Machine Learning
+            % Extract an 8D feature vector for Machine Learning
             pm25 = obj.PM25Data(k);
             pm10 = max(obj.PM10Data(k), 0.1);
             
@@ -452,19 +465,26 @@ classdef AirQualitySystem < handle
                 roc = 0;
             end
             
+            % 3. Acceleration (Rate of Rate of Change)
+            if k > 2
+                accel = roc - (obj.PM25Data(k-1) - obj.PM25Data(max(1, k-2)));
+            else
+                accel = 0;
+            end
+            
             % Moving Windows
             w5 = max(1, k-5):k;
             w15 = max(1, k-15):k;
             
-            % 3 & 4. Moving Averages
+            % 4 & 5. Moving Averages
             ma5 = mean(obj.PM25Data(w5), 'omitnan');
             ma15 = mean(obj.PM25Data(w15), 'omitnan');
             
-            % 5. Volatility (Std Dev)
+            % 6. Volatility (Std Dev)
             std5 = std(obj.PM25Data(w5), 'omitnan');
             if isnan(std5), std5 = 0; end
             
-            % 6 & 7. Skewness and Kurtosis
+            % 7 & 8. Skewness and Kurtosis
             if length(w15) >= 4
                 skew15 = skewness(obj.PM25Data(w15), 1);
                 kurt15 = kurtosis(obj.PM25Data(w15), 1);
@@ -473,7 +493,7 @@ classdef AirQualitySystem < handle
                 kurt15 = 3; % Normal dist kurtosis
             end
             
-            rawFeatures = [ratio, roc, ma5, ma15, std5, skew15, kurt15];
+            rawFeatures = [ratio, roc, accel, ma5, ma15, std5, skew15, kurt15];
             
             % Apply Z-score Normalization if scaling parameters exist
             if ~isempty(obj.FeatureMu) && ~isempty(obj.FeatureSigma)

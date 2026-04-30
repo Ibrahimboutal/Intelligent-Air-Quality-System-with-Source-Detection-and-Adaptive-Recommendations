@@ -66,9 +66,9 @@ for hi = 1:length(horizons)
     errors = [];
     L_i    = L; T_i = T_hw;
 
-    for k = warmup+1 : N-h
+    for k = warmup+1 : N-h+1
         predicted     = hw_forecast(L_i, T_i, phi_hw, h);
-        actual        = pm25(k + h);
+        actual        = pm25(k - 1 + h);
         errors(end+1) = predicted - actual; %#ok<AGROW>
         [L_i, T_i]   = hw_update(pm25(k), L_i, T_i, alpha_hw, beta_hw, phi_hw);
     end
@@ -93,9 +93,9 @@ for ai = 1:length(alphas)
             [L_i, T_i] = hw_update(pm25(k), L_i, T_i, alphas(ai), betas(bi), phi_hw);
         end
         errs = [];
-        for k = warmup+1 : N-15
+        for k = warmup+1 : N-15+1
             predicted   = hw_forecast(L_i, T_i, phi_hw, 15);
-            errs(end+1) = predicted - pm25(k+15); %#ok<AGROW>
+            errs(end+1) = predicted - pm25(k-1+15); %#ok<AGROW>
             [L_i, T_i]  = hw_update(pm25(k), L_i, T_i, alphas(ai), betas(bi), phi_hw);
         end
         rmse_grid(ai, bi) = sqrt(mean(errs.^2));

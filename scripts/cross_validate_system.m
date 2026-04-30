@@ -16,10 +16,10 @@ end
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    % Reconstruct Features_7D matrix from CSV-split columns
-    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    % Reconstruct Features matrix from CSV-split columns
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_'));
     if ~isempty(featCols)
-        T.Features_7D = T{:, featCols};
+        T.Features = T{:, featCols};
         T = removevars(T, featCols);
     end
     allData = [allData; T];
@@ -27,24 +27,32 @@ end
 
 validIdx = ~isnan(allData.PM25) & ~strcmp(allData.Source, "");
 data = allData(validIdx, :);
-X = data.Features_7D;
+X = data.Features;
 y = categorical(data.Source);
 
-% Handle variable naming if Features_7D is a multi-column matrix
+% Handle variable naming if Features is a multi-column matrix
 if size(X, 2) == 1 && iscell(X)
-    X = cell2mat(data.Features_7D);
+    X = cell2mat(data.Features);
 end
 
-% --- 2. K-Fold Cross-Validation ---
-K = 5; % 5-Fold Cross Validation
-fprintf('Starting %d-Fold Cross-Validation...\n', K);
+% --- 2. Time-Series Expanding Window Validation ---
+K = 5; % 5 Splits
+fprintf('Starting %d-Split Time-Series Expanding Window Validation...\n', K);
 
-cp = cvpartition(y, 'KFold', K);
+N = size(X, 1);
+warmup = floor(N * 0.2); % Use first 20% as initial training baseline
+if warmup < 10, error('Not enough data for time-series cross-validation.'); end
+
+test_size = floor((N - warmup) / K);
 accuracies = zeros(K, 1);
 
 for i = 1:K
-    trainIdx = training(cp, i);
-    testIdx = test(cp, i);
+    train_end = warmup + (i-1) * test_size;
+    test_end = train_end + test_size;
+    if i == K, test_end = N; end % Absorb remainder in the last fold
+    
+    trainIdx = 1:train_end;
+    testIdx = (train_end+1):test_end;
     
     X_train = X(trainIdx, :);
     y_train = y(trainIdx);
@@ -61,7 +69,7 @@ for i = 1:K
     
     % Accuracy for this fold
     accuracies(i) = sum(y_test == y_pred) / length(y_test);
-    fprintf('  Fold %d Accuracy: %.2f%%\n', i, accuracies(i) * 100);
+    fprintf('  Split %d (Train: %d, Test: %d) Accuracy: %.2f%%\n', i, length(trainIdx), length(testIdx), accuracies(i) * 100);
 end
 
 % --- 3. Report Results ---
