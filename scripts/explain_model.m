@@ -11,7 +11,7 @@
 %   4. Decision Boundary Viz      — 2D projection of the classification space
 
 clear; close all; clc;
-addpath(fullfile(pwd, 'src'));
+addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
 
 FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', 'Acceleration', ...
                  'MA-5s', 'MA-15s', 'Volatility (Std)', ...

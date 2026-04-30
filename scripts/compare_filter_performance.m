@@ -12,7 +12,7 @@
 clear; close all; clc;
 
 % Ensure the src directory is on the path
-addpath(fullfile(pwd, 'src'));
+addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
 
 % ===========================================================================
 % 1. LOAD & PREPARE DATA

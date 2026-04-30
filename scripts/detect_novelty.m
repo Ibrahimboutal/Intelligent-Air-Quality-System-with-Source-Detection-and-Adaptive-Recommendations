@@ -16,9 +16,9 @@
 % the complementary nature of supervised + unsupervised learning.
 
 clear; close all; clc;
-addpath(fullfile(pwd, 'src'));
+addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
 
-FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', ...
+FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', 'Acceleration', ...
                  'MA-5s', 'MA-15s', 'Volatility', ...
                  'Skewness', 'Kurtosis'};
 
@@ -34,20 +34,20 @@ end
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    % Reconstruct Features_7D matrix from CSV-split columns (writetable splits matrix cols)
-    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    % Reconstruct Features matrix from CSV-split columns (writetable splits matrix cols)
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_'));
     if ~isempty(featCols)
-        T.Features_7D = T{:, featCols};
+        T.Features = T{:, featCols};
         T = removevars(T, featCols);
     end
-    if ismember('Features_7D', T.Properties.VariableNames)
+    if ismember('Features', T.Properties.VariableNames)
         allData = [allData; T];
     end
 end
 
 validIdx = ~isnan(allData.PM25);
 data     = allData(validIdx, :);
-X        = data.Features_7D;
+X        = data.Features;
 N        = size(X, 1);
 fprintf('Loaded %d samples for novelty detection.\n', N);
 
@@ -165,7 +165,7 @@ if sum(anomaly_labels) > 0 && size(X_clean,1) > 1
     
     [sorted_contrib, si] = sort(contribution_norm, 'descend');
     barh(ax3, sorted_contrib, 'FaceColor', [0.8 0.3 0.1]);
-    set(ax3, 'YTick', 1:7, 'YTickLabel', flip(FEATURE_NAMES(si)));
+    set(ax3, 'YTick', 1:8, 'YTickLabel', flip(FEATURE_NAMES(si)));
     xlabel('Normalized Mean Deviation from Clean Baseline');
     title('Which Features Drive Anomalies?', 'FontWeight', 'bold');
     grid on;

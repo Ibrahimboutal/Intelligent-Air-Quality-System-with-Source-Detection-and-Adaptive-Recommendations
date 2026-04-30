@@ -194,10 +194,17 @@ classdef ScriptsCoverageTest < matlab.unittest.TestCase
         function safeRun(scriptName)
             % Run script in its own stack-frame so that the script's `clear`
             % command does not wipe the calling test-method's `testCase` variable.
+            % However, `clear` in the script will wipe `scriptName` from THIS scope.
+            sName = scriptName;
             try
-                run(scriptName);
+                run(sName);
             catch ME
-                fprintf('ERROR EXECUTING SCRIPT %s:\n%s\n', scriptName, ME.message);
+                % If 'clear' was called, sName is gone.
+                try
+                    fprintf('ERROR EXECUTING SCRIPT %s:\n%s\n', sName, ME.message);
+                catch
+                    fprintf('ERROR EXECUTING SCRIPT (Name cleared by script):\n%s\n', ME.message);
+                end
                 rethrow(ME);
             end
         end
