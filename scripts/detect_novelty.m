@@ -25,7 +25,7 @@ FEATURE_NAMES = {'PM2.5/PM10 Ratio', 'Rate of Change', 'Acceleration', ...
 % ===========================================================================
 % 1. LOAD DATA
 % ===========================================================================
-logDir = 'logs';
+logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
 logFiles = dir(fullfile(logDir, '*.csv'));
 if isempty(logFiles)
     error('No log files in %s.', logDir);

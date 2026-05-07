@@ -14,6 +14,17 @@ latestFile = fullfile(logDir, files(idx(1)).name);
 fprintf('Processing latest data for ML Training: %s\n', latestFile);
 data = readtable(latestFile);
 
+if ismember('PM25', data.Properties.VariableNames) && ~ismember('pm25', data.Properties.VariableNames)
+    data.pm25 = data.PM25;
+end
+if ismember('PM10', data.Properties.VariableNames) && ~ismember('pm10', data.Properties.VariableNames)
+    data.pm10 = data.PM10;
+end
+
+if ~ismember('pm25', data.Properties.VariableNames) || ~ismember('pm10', data.Properties.VariableNames)
+    error('Expected either PM25/PM10 or pm25/pm10 columns in the input log file.');
+end
+
 % Engineering Core Features
 data.pm25_avg = movmean(data.pm25, 5);
 data.pm10_avg = movmean(data.pm10, 5);

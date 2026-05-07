@@ -17,7 +17,7 @@ addpath(fullfile(fileparts(mfilename('fullpath')), '../src'));
 % ===========================================================================
 % 1. LOAD & PREPARE DATA
 % ===========================================================================
-logDir = 'logs';
+logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
 logFiles = dir(fullfile(logDir, '*.csv'));
 
 if isempty(logFiles)
@@ -28,10 +28,10 @@ fprintf('Loading log data...\n');
 allData = table();
 for i = 1:length(logFiles)
     T = readtable(fullfile(logDir, logFiles(i).name));
-    % Reconstruct Features_7D matrix from CSV-split columns
-    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_7D_'));
+    % Reconstruct the exported feature matrix from CSV-split columns
+    featCols = T.Properties.VariableNames(startsWith(T.Properties.VariableNames, 'Features_'));
     if ~isempty(featCols)
-        T.Features_7D = T{:, featCols};
+        T.Features = T{:, featCols};
         T = removevars(T, featCols);
     end
     if ismember('PM25', T.Properties.VariableNames) && ismember('Source', T.Properties.VariableNames)
@@ -94,7 +94,7 @@ fprintf('%-25s | %-12s | %-12.4f | %-12.4f\n', 'Avg Deviation from Raw', '0', ma
 % ===========================================================================
 fprintf('\n--- Downstream ML Impact: Does Filtering Help? ---\n');
 
-if ismember('Source', allData.Properties.VariableNames) && ismember('Features_7D', allData.Properties.VariableNames)
+if ismember('Source', allData.Properties.VariableNames) && ismember('Features', allData.Properties.VariableNames)
     validIdx = ~isnan(allData.PM25) & ~strcmp(allData.Source, "");
     data = allData(validIdx, :);
     

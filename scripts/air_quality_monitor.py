@@ -11,12 +11,13 @@ import signal
 import sys
 
 # --- Configuration ---
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyUSB0')
 BAUD_RATE = int(os.getenv('BAUD_RATE', 9600))
-LOG_DIR = 'logs'
-ERROR_LOG = 'error.log'
+LOG_DIR = os.path.join(BASE_DIR, 'logs')
+ERROR_LOG = os.path.join(BASE_DIR, 'error.log')
 DATA_FILE_PREFIX = 'AQI_Log'
-DB_NAME = 'air_quality.db'
+DB_NAME = os.path.join(BASE_DIR, 'air_quality.db')
 BATCH_SIZE = 60  # Commit to DB every 60 seconds to protect SD card
 
 # TCP Telemetry Configuration (Fix: Load from Environment)

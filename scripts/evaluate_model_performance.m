@@ -5,7 +5,7 @@
 clear; close all; clc;
 
 % --- 1. Load Data ---
-logDir = '../logs';
+logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
 logFiles = dir(fullfile(logDir, '*.csv'));
 if isempty(logFiles)
     error('No log files found in %s. Run a monitoring session first.', logDir);

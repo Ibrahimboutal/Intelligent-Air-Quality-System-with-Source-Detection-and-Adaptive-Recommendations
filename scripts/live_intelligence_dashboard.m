@@ -6,7 +6,7 @@
 clear; clc; close all;
 
 % Configuration
-logDir = '../logs';
+logDir = fullfile(fileparts(mfilename('fullpath')), '..', 'logs');
 pollInterval = 5; % Seconds between updates
 
 fprintf('Starting Live Intelligence Dashboard (Near Real-Time)...\n');
@@ -36,6 +36,17 @@ while ishghandle(fig)
         
         % 2. Read latest data
         data = readtable(latestFile);
+
+        if ismember('PM25', data.Properties.VariableNames) && ~ismember('pm25', data.Properties.VariableNames)
+            data.pm25 = data.PM25;
+        end
+        if ismember('PM10', data.Properties.VariableNames) && ~ismember('pm10', data.Properties.VariableNames)
+            data.pm10 = data.PM10;
+        end
+
+        if ~ismember('pm25', data.Properties.VariableNames) || ~ismember('pm10', data.Properties.VariableNames)
+            error('Latest log is missing PM25/PM10 data.');
+        end
         
         if height(data) < 5
             set(annotationPanel, 'String', 'Status: WAITING FOR MORE DATA (at least 5 samples)...');

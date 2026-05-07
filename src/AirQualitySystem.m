@@ -261,6 +261,76 @@ classdef AirQualitySystem < handle
                 stop(obj.TimerObj);
             end
         end
+
+        function [source, advice, noveltyScore, predictedPM25] = processNewSample(obj, pm25, pm10)
+            % Process a single incoming telemetry sample for live dashboards.
+            if nargin < 3 || isempty(pm25) || isempty(pm10)
+                source = "Clean";
+                advice = "Air is clean";
+                noveltyScore = NaN;
+                predictedPM25 = NaN;
+                return;
+            end
+
+            if isempty(obj.TimeArray)
+                k = 1;
+            else
+                k = find(isnan(obj.TimeArray), 1, 'first');
+                if isempty(k)
+                    k = numel(obj.TimeArray) + 1;
+                end
+            end
+
+            if isempty(obj.TimeArray) || numel(obj.TimeArray) < k
+                obj.TimeArray(k)    = NaN;
+                obj.PM25Data(k)     = NaN;
+                obj.PM10Data(k)     = NaN;
+                obj.PM25Filtered(k) = NaN;
+                obj.PM10Filtered(k) = NaN;
+                obj.SourceData(k)   = "";
+                obj.AdviceData(k)   = "";
+                obj.FeatureMatrix(k, :) = NaN(1, 8);
+                obj.ForecastData(k)  = NaN;
+                obj.NoveltyData(k)   = false;
+                obj.NoveltyScores(k) = NaN;
+            end
+
+            obj.TimeArray(k) = k;
+            obj.PM25Data(k) = pm25;
+            obj.PM10Data(k) = pm10;
+
+            if obj.UseKalman
+                pm25_f = obj.KF_PM25.update(pm25);
+                pm10_f = obj.KF_PM10.update(pm10);
+            else
+                pm25_f = pm25;
+                pm10_f = pm10;
+            end
+
+            obj.PM25Filtered(k) = pm25_f;
+            obj.PM10Filtered(k) = pm10_f;
+
+            features = obj.extractFeatures(k);
+            obj.FeatureMatrix(k, :) = features;
+
+            predictedPM25 = obj.forecastAQI(k);
+            obj.ForecastData(k) = predictedPM25;
+
+            [source, advice] = obj.analyze(k, features, predictedPM25);
+            obj.SourceData(k) = source;
+            obj.AdviceData(k) = advice;
+
+            noveltyScore = NaN;
+            if ~isempty(obj.NoveltyDetector) && ~any(isnan(features))
+                noveltyScore = obj.NoveltyDetector.score(features);
+                obj.NoveltyScores(k) = noveltyScore;
+                obj.NoveltyData(k) = noveltyScore > obj.NoveltyDetector.Threshold;
+            end
+
+            if ~isempty(obj.FigureHandle) && ishghandle(obj.FigureHandle)
+                obj.updateDashboard(k);
+            end
+        end
         
         function cleanupTimer(obj)
             if ~isempty(obj.TimerObj) && isvalid(obj.TimerObj)
@@ -683,7 +753,15 @@ classdef AirQualitySystem < handle
         end
         function [X, y] = getTrainingData(obj)
             % Returns features (X) and labels (y) from current session data
-            validIdx = ~isnan(obj.TimeArray) & (obj.SourceData ~= "");
+            validIdx = ~isnan(obj.TimeArray) & (strlength(obj.SourceData) > 0);
+            validIdx = validIdx & all(~isnan(obj.FeatureMatrix), 2);
+
+            if ~any(validIdx)
+                X = zeros(0, size(obj.FeatureMatrix, 2));
+                y = categorical(strings(0, 1));
+                return;
+            end
+
             X = obj.FeatureMatrix(validIdx, :);
             y = categorical(obj.SourceData(validIdx)');
         end

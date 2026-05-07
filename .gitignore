@@ -8,6 +8,7 @@
 
 # Data files
 *.csv
+*.db
 
 # MAT files
 *.mat
@@ -15,5 +16,20 @@
 # VSCode files
 .vscode
 .idea
+.pytest_cache/
+.venv/
 
 #Coverage files
+
+#cache files
+*.cache
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
