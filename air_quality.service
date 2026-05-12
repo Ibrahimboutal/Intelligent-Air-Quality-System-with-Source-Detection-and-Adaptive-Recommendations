@@ -4,6 +4,7 @@ After=multi-user.target
 
 [Service]
 # CHANGE THESE PATHS TO MATCH YOUR RASPBERRY PI SETUP
+EnvironmentFile=/home/pi/Intelligent-Air-Quality-System/.env
 ExecStart=/usr/bin/python3 /home/pi/Intelligent-Air-Quality-System/scripts/air_quality_monitor.py
 WorkingDirectory=/home/pi/Intelligent-Air-Quality-System
 Restart=always

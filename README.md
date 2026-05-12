@@ -90,7 +90,7 @@ The `scripts/air_quality_monitor.py` service runs as a `systemd` daemon. It hand
 ### 6. Predictive Intelligence & Backtesting
 `scripts/backtest_forecaster.m` evaluates the Holt-Winters forecaster at horizons of 1, 3, 5, 10, and 15 minutes — producing RMSE/MAE curves, an $\alpha$/$\beta$ sensitivity heatmap, a residual ACF white-noise test, and an actual-vs-predicted plot with uncertainty bands.
 
-### 8. Zero-Latency Intelligence Dashboard
+### 7. Zero-Latency Intelligence Dashboard
 The `scripts/socket_intelligence_dashboard.m` is the primary monitoring interface. It:
 *   **Decouples Acquisition from Analysis:** Receives JSON packets via TCP, allowing the Raspberry Pi to be located anywhere on the network.
 *   **Dual-View Visualization:** Real-time filtered time-series (top) and dynamic source classification (bottom).
