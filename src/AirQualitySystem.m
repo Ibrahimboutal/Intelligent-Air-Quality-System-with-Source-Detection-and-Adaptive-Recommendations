@@ -100,8 +100,15 @@ classdef AirQualitySystem < handle
             if exist(noveltyModelPath, 'file')
                 try
                     nd = load(noveltyModelPath);
-                    obj.NoveltyDetector = nd.NoveltyDetector;
-                    fprintf('Pre-trained Isolation Forest loaded (novelty detection active).\n');
+                    % Validation: Ensure novelty detector feature count matches (8 features)
+                    if isfield(nd, 'NoveltyDetector') && ~isempty(nd.NoveltyDetector.FeatureMins) && ...
+                       length(nd.NoveltyDetector.FeatureMins) == 8
+                        obj.NoveltyDetector = nd.NoveltyDetector;
+                        fprintf('Pre-trained Isolation Forest loaded (novelty detection active).\n');
+                    else
+                        warning('Novelty detector dimension mismatch or corrupted file. Run scripts/detect_novelty.m to retrain.');
+                        obj.NoveltyDetector = [];
+                    end
                 catch
                     fprintf('Could not load novelty detector. Run detect_novelty.m to train.\n');
                 end
@@ -114,10 +121,32 @@ classdef AirQualitySystem < handle
             if exist(modelPath, 'file')
                 try
                     data = load(modelPath);
-                    obj.MLModel = data.MLModel;
-                    obj.FeatureMu = data.FeatureMu;
-                    obj.FeatureSigma = data.FeatureSigma;
-                    fprintf('Pre-trained ML model loaded successfully (Zero-latency startup).\n');
+                    
+                    % Validation 1: Check for Statistics and Machine Learning Toolbox
+                    hasStatsToolbox = ~isempty(ver('stats'));
+                    
+                    % Validation 2: Ensure MLModel is valid and not a uint32 (missing toolbox indicator)
+                    if isfield(data, 'MLModel') && (isa(data.MLModel, 'TreeBagger') || isa(data.MLModel, 'CompactTreeBagger'))
+                        obj.MLModel = data.MLModel;
+                        fprintf('Pre-trained ML model (TreeBagger) loaded successfully.\n');
+                    elseif ~hasStatsToolbox
+                        warning('Statistics and Machine Learning Toolbox is required for TreeBagger models. Falling back to heuristics.');
+                        obj.MLModel = [];
+                    else
+                        warning('MLModel in trainedModel.mat is invalid or incompatible. Falling back to heuristics.');
+                        obj.MLModel = [];
+                    end
+                    
+                    % Validation 3: Check feature dimensions for Z-score scaling
+                    expectedFeatureCount = 8;
+                    if isfield(data, 'FeatureMu') && length(data.FeatureMu) == expectedFeatureCount
+                        obj.FeatureMu = data.FeatureMu;
+                        obj.FeatureSigma = data.FeatureSigma;
+                    else
+                        warning('Feature scaling parameters missing or dimension mismatch. Disabling Z-score scaling.');
+                        obj.FeatureMu = [];
+                        obj.FeatureSigma = [];
+                    end
                     
                     % Check model age to ensure baseline accuracy in new environments
                     fileInfo = dir(modelPath);
@@ -234,13 +263,19 @@ classdef AirQualitySystem < handle
             
             % Phase 5: Novelty Detection — flag unknown events in real-time
             if ~isempty(obj.NoveltyDetector) && ~any(isnan(features))
-                nov_score = obj.NoveltyDetector.score(features);
-                is_novel  = nov_score > obj.NoveltyDetector.Threshold;
-                obj.NoveltyScores(k) = nov_score;
-                obj.NoveltyData(k)   = is_novel;
-                if is_novel && source == "Clean"
-                    fprintf('Time %3d | [NOVELTY ALERT] Unknown event detected (score=%.3f). Investigate!\n', ...
-                        k, nov_score);
+                try
+                    nov_score = obj.NoveltyDetector.score(features);
+                    is_novel  = nov_score > obj.NoveltyDetector.Threshold;
+                    obj.NoveltyScores(k) = nov_score;
+                    obj.NoveltyData(k)   = is_novel;
+                    if is_novel && source == "Clean"
+                        fprintf('Time %3d | [NOVELTY ALERT] Unknown event detected (score=%.3f). Investigate!\n', ...
+                            k, nov_score);
+                    end
+                catch ME
+                    % Graceful failure for novelty detector (e.g. dimension mismatch)
+                    obj.NoveltyDetector = [];
+                    fprintf('Novelty detector failed: %s. Disabled for this session.\n', ME.message);
                 end
             end
             
@@ -449,8 +484,8 @@ classdef AirQualitySystem < handle
             
             % --- Dynamic Heuristics (Fix: Avoid Hardcoded Thresholds) ---
             if pm25 > threshold
-                if ~isempty(obj.MLModel)
-                    % Use trained Random Forest model
+                % Use trained Random Forest model (if object is valid)
+                try
                     predSource = predict(obj.MLModel, features);
                     if iscell(predSource)
                         source = string(predSource{1});
@@ -459,35 +494,9 @@ classdef AirQualitySystem < handle
                     else
                         source = string(predSource);
                     end
-                else
-                    % Fallback Dynamic Heuristics
-                    ratio = features(1);
-                    roc = features(2);
-                    
-                    % Calculate environmental baseline for dynamic scaling
-                    history = obj.PM25Data(max(1, k-300):max(1, k-1));
-                    valid_history = history(~isnan(history));
-                    
-                    if isempty(valid_history)
-                        env_median = 10;
-                        env_mad = 5;
-                    else
-                        env_median = median(valid_history);
-                        env_mad = mad(valid_history, 1);
-                    end
-                    
-                    if env_mad == 0, env_mad = 5; end
-                    
-                    % Heuristic decision logic scaled by environment
-                    if ratio > 0.8
-                        source = "Combustion (cooking / smoke)";
-                    elseif roc > (env_median + 2*env_mad)
-                        source = "Dust / Sudden disturbance";
-                    elseif ratio < 0.5
-                        source = "Coarse particles (outdoor dust)";
-                    else
-                        source = "General pollution";
-                    end
+                catch
+                    % Fallback to heuristics if predict fails (e.g. uint32 or toolbox issue)
+                    source = obj.fallbackHeuristics(k, features);
                 end
             else
                 source = "Clean";
@@ -556,8 +565,22 @@ classdef AirQualitySystem < handle
             
             % 7 & 8. Skewness and Kurtosis
             if length(w15) >= 4
-                skew15 = skewness(obj.PM25Data(w15), 1);
-                kurt15 = kurtosis(obj.PM25Data(w15), 1);
+                if exist('skewness', 'file') == 2
+                    skew15 = skewness(obj.PM25Data(w15), 1);
+                    kurt15 = kurtosis(obj.PM25Data(w15), 1);
+                else
+                    % Manual fallback for skewness/kurtosis if toolbox is missing
+                    data_window = obj.PM25Data(w15);
+                    mu = mean(data_window, 'omitnan');
+                    sigma = std(data_window, 'omitnan');
+                    if sigma > 0
+                        z = (data_window - mu) ./ sigma;
+                        skew15 = mean(z.^3, 'omitnan');
+                        kurt15 = mean(z.^4, 'omitnan');
+                    else
+                        skew15 = 0; kurt15 = 3;
+                    end
+                end
             else
                 skew15 = 0;
                 kurt15 = 3; % Normal dist kurtosis
@@ -565,8 +588,9 @@ classdef AirQualitySystem < handle
             
             rawFeatures = [ratio, roc, accel, ma5, ma15, std5, skew15, kurt15];
             
-            % Apply Z-score Normalization if scaling parameters exist
-            if ~isempty(obj.FeatureMu) && ~isempty(obj.FeatureSigma)
+            % Apply Z-score Normalization if scaling parameters exist and match dimensions
+            if ~isempty(obj.FeatureMu) && ~isempty(obj.FeatureSigma) && ...
+               length(obj.FeatureMu) == length(rawFeatures)
                 features = (rawFeatures - obj.FeatureMu) ./ obj.FeatureSigma;
             else
                 features = rawFeatures; % Unscaled fallback
@@ -644,7 +668,12 @@ classdef AirQualitySystem < handle
                     fprintf('FSDA toolbox not found. Falling back to robust Mahalanobis distance.\n');
                     % Fallback using median and MAD for robust Mahalanobis
                     medY = median(Y, 1, 'omitnan');
-                    madY = mad(Y, 1);
+                    if exist('mad', 'file') == 2
+                        madY = mad(Y, 1);
+                    else
+                        % Manual MAD calculation
+                        madY = median(abs(Y - medY), 1, 'omitnan');
+                    end
                     madY(madY == 0) = 1e-6; % Prevent division by zero
                     
                     % Simple standardized robust distance
@@ -764,6 +793,41 @@ classdef AirQualitySystem < handle
 
             X = obj.FeatureMatrix(validIdx, :);
             y = categorical(obj.SourceData(validIdx)');
+        end
+
+        function source = fallbackHeuristics(obj, k, features)
+            % Dynamic Heuristics as a robust fallback for ML
+            ratio = features(1);
+            roc = features(2);
+            
+            % Calculate environmental baseline for dynamic scaling
+            history = obj.PM25Data(max(1, k-300):max(1, k-1));
+            valid_history = history(~isnan(history));
+            
+            if isempty(valid_history)
+                env_median = 10;
+                env_mad = 5;
+            else
+                env_median = median(valid_history);
+                if exist('mad', 'file') == 2
+                    env_mad = mad(valid_history, 1);
+                else
+                    env_mad = median(abs(valid_history - env_median), 'omitnan');
+                end
+            end
+            
+            if env_mad == 0, env_mad = 5; end
+            
+            % Heuristic decision logic scaled by environment
+            if ratio > 0.8
+                source = "Combustion (cooking / smoke)";
+            elseif roc > (env_median + 2*env_mad)
+                source = "Dust / Sudden disturbance";
+            elseif ratio < 0.5
+                source = "Coarse particles (outdoor dust)";
+            else
+                source = "General pollution";
+            end
         end
     end
 end
