@@ -37,7 +37,7 @@ flowchart TD
     subgraph "Intelligence Layer (MATLAB)"
         D -->|JSON Stream| E[Intelligence Hub]
         E --> KF["Kalman Filter (Phase 2: NaN-Resilient)"]
-        KF --> F[8D Feature Extraction (Phase 1: +Acceleration)]
+        KF --> F["8D Feature Extraction (Phase 1: +Acceleration)"]
         F --> G["Random Forest Classifier (Phase 1 & 3)"]
         F --> IF["Isolation Forest (Phase 5: Scaled)"]
         E --> H["Recursive HW Forecaster (Phase 4: Causality-Fixed)"]
