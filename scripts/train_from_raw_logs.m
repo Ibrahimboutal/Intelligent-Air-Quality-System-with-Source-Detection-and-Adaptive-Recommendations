@@ -11,6 +11,13 @@ for i = 1:length(logFiles)
     if ~ismember('PM25', tempTbl.Properties.VariableNames) && width(tempTbl) >= 3
         tempTbl.Properties.VariableNames(1:3) = {'Timestamp', 'PM25', 'PM10'};
     end
+    % Standardize string/cell array types for Timestamp to prevent mismatches
+    if ismember('Timestamp', tempTbl.Properties.VariableNames)
+        tempTbl.Timestamp = string(tempTbl.Timestamp);
+    end
+    if ismember('Timestamp', rawTbl.Properties.VariableNames)
+        rawTbl.Timestamp = string(rawTbl.Timestamp);
+    end
     % Keep only the essential columns for raw-log training
     keepCols = intersect({'Timestamp','PM25','PM10'}, tempTbl.Properties.VariableNames, 'stable');
     if numel(keepCols) == 3

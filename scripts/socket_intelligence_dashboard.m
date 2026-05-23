@@ -23,7 +23,8 @@ if ~isHeadless
                  'Color', 'w', 'Position', [50, 50, 1100, 800]);
     annotationPanel = annotation('textbox', [0.1, 0.92, 0.8, 0.08], ...
         'String', 'Initializing Telemetry...', 'FitBoxToText', 'on', ...
-        'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold');
+        'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold', ...
+        'Color', [0.1 0.1 0.1]);
 else
     fig = 100; % Mock figure handle for CI
     fprintf('Running in CI Headless mode...\n');

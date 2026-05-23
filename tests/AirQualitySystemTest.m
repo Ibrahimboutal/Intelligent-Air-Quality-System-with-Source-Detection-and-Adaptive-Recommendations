@@ -126,8 +126,13 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             end
             modelPath = fullfile(modelDir, 'trainedModel.mat');
             
-            % Save a dummy model
-            MLModel = 1; FeatureMu = zeros(1,8); FeatureSigma = ones(1,8);
+            % Save a dummy TreeBagger model if stats toolbox is present
+            try
+                MLModel = TreeBagger(2, rand(5,8), categorical(randi([1,2],5,1)));
+            catch
+                MLModel = 1; % Fallback if Statistics Toolbox is missing
+            end
+            FeatureMu = zeros(1,8); FeatureSigma = ones(1,8);
             save(modelPath, 'MLModel', 'FeatureMu', 'FeatureSigma');
             
             % Verify file exists before proceeding
@@ -135,7 +140,11 @@ classdef AirQualitySystemTest < matlab.unittest.TestCase
             
             % Now constructor should "load" it (assuming it runs in the same CWD)
             obj2 = AirQualitySystem('1.1.1.1', 'pi', 'pass', 'COM1', 9600, true);
-            testCase.verifyNotEmpty(obj2.MLModel);
+            if ~isempty(ver('stats')) && isa(MLModel, 'TreeBagger')
+                testCase.verifyNotEmpty(obj2.MLModel);
+            else
+                testCase.verifyEmpty(obj2.MLModel);
+            end
             
             % Cleanup
             if exist(modelPath, 'file'), delete(modelPath); end

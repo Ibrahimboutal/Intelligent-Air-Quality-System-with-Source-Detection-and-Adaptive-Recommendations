@@ -18,7 +18,8 @@ fig = figure('Name', 'LIVE Adaptive Air Quality Intelligence', 'Color', 'w', 'Po
 % Setup UI Panels for Status
 annotationPanel = annotation('textbox', [0.1, 0.85, 0.8, 0.1], ...
     'String', 'Waiting for data...', 'FitBoxToText', 'on', ...
-    'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold');
+    'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 12, 'FontWeight', 'bold', ...
+    'Color', [0.1 0.1 0.1]);
 
 % Keep running until figure is closed
 while ishghandle(fig)

@@ -565,11 +565,12 @@ classdef AirQualitySystem < handle
             
             % 7 & 8. Skewness and Kurtosis
             if length(w15) >= 4
-                if exist('skewness', 'file') == 2
+                try
+                    % Try using Statistics Toolbox functions
                     skew15 = skewness(obj.PM25Data(w15), 1);
                     kurt15 = kurtosis(obj.PM25Data(w15), 1);
-                else
-                    % Manual fallback for skewness/kurtosis if toolbox is missing
+                catch
+                    % Manual fallback for skewness/kurtosis if toolbox or license is missing
                     data_window = obj.PM25Data(w15);
                     mu = mean(data_window, 'omitnan');
                     sigma = std(data_window, 'omitnan');
@@ -726,13 +727,13 @@ classdef AirQualitySystem < handle
             title(ax, 'Real-Time Air Quality & Source Detection', 'FontSize', 14, 'FontWeight', 'bold');
             xlabel(ax, 'Time (seconds)', 'FontSize', 12);
             ylabel(ax, 'Concentration (\mu g / m^3)', 'FontSize', 12);
-            legend(ax, 'Location', 'northwest', 'FontSize', 11);
+            legend(ax, 'Location', 'northeast', 'FontSize', 11);
             
-            % Status Annotation Panel
-            obj.AnnotationText = annotation('textbox', [0.15, 0.75, 0.35, 0.15], ...
-                'String', 'Initializing...', 'FitBoxToText', 'on', ...
+            % Status Annotation Panel (Fixed width to prevent covering the top-right, high-contrast dark text)
+            obj.AnnotationText = annotation('textbox', [0.14, 0.74, 0.30, 0.16], ...
+                'String', 'Initializing...', 'FitBoxToText', 'off', ...
                 'BackgroundColor', [0.95 0.95 0.95], 'EdgeColor', 'k', 'FontSize', 11, ...
-                'Margin', 10);
+                'Margin', 8, 'Color', [0.1 0.1 0.1], 'FontWeight', 'bold');
         end
         
         function updateDashboard(obj, k)

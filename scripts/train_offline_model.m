@@ -38,9 +38,25 @@ for i = 1:length(logFiles)
         continue;
     end
     
+    % Standardize string/cell array types to prevent concatenation mismatches
+    stringVars = {'Source', 'Advice', 'Timestamp'};
+    for sv = stringVars
+        varName = sv{1};
+        if ismember(varName, tempTbl.Properties.VariableNames)
+            tempTbl.(varName) = string(tempTbl.(varName));
+        end
+    end
+    
     if isempty(dataTbl)
         dataTbl = tempTbl;
     else
+        % Also ensure dataTbl has standardized string types
+        for sv = stringVars
+            varName = sv{1};
+            if ismember(varName, dataTbl.Properties.VariableNames)
+                dataTbl.(varName) = string(dataTbl.(varName));
+            end
+        end
         commonVars = intersect(dataTbl.Properties.VariableNames, tempTbl.Properties.VariableNames, 'stable');
         dataTbl = [dataTbl(:, commonVars); tempTbl(:, commonVars)];
     end
@@ -59,8 +75,17 @@ Y_raw = dataTbl.Source;
 
 % Convert labels to categorical for training
 Y = categorical(Y_raw);
+
+% Clean up any rows containing NaN values in features (e.g. from moving window warm-ups)
+nanRows = any(isnan(X_raw), 2);
+if any(nanRows)
+    fprintf('   Removing %d rows with NaN values (moving window warm-ups)...\n', sum(nanRows));
+    X_raw(nanRows, :) = [];
+    Y(nanRows) = [];
+end
+
 N = size(X_raw, 1);
-fprintf('   Successfully loaded %d total physical samples.\n', N);
+fprintf('   Successfully loaded %d total physical samples after cleaning NaNs.\n', N);
 
 %% 2. Feature Selection Validation (Collinearity Check)
 fprintf('2. Validating Feature Orthogonality (Correlation Matrix)...\n');
