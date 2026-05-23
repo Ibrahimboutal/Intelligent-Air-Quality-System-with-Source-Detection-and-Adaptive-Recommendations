@@ -746,6 +746,7 @@ classdef AirQualitySystem < handle
             set(obj.PlotLine25, 'XData', obj.TimeArray(1:k), 'YData', obj.PM25Data(1:k));
             set(obj.PlotLine10, 'XData', obj.TimeArray(1:k), 'YData', obj.PM10Data(1:k));
             
+            
             % Find events
             validSrc = obj.SourceData(1:k);
             eventIdx = find(validSrc ~= "Clean" & validSrc ~= "");
